@@ -247,8 +247,7 @@ def clean_invalid_results(args, log_path, config, system_desc, system_json,
 
             compliance_is_valid = True
             if is_closed_or_network:
-                compliance_dir = change_folder_name_in_path(
-                    scenario_path, "results", "compliance")
+                compliance_dir = scenario_path
                 if not checker.check_compliance_dir(
                     compliance_dir,
                     mlperf_model,
@@ -266,8 +265,7 @@ def clean_invalid_results(args, log_path, config, system_desc, system_json,
                 scenario_path, "results", "measurements")
             if scenario in [
                     "Offline", "MultiStream"] and (not accuracy_is_valid or not perf_is_valid) or division == "open":  # they can be inferred
-                scenario_compliance_path = change_folder_name_in_path(
-                    scenario_path, "results", "compliance")
+                scenario_compliance_path = scenario_path
                 log.warning(
                     f"{scenario} scenario result is invalid for {system_desc}: {model} in {division} division. Accuracy: {accuracy_is_valid}, Performance: {perf_is_valid}. Removing...")
                 if os.path.exists(scenario_path):
@@ -278,10 +276,8 @@ def clean_invalid_results(args, log_path, config, system_desc, system_json,
                     shutil.rmtree(scenario_compliance_path)
             elif division in ["closed", "network"]:
                 model_results_path = os.path.dirname(scenario_path)
-                model_measurements_path = change_folder_name_in_path(
-                    model_results_path, "results", "measurements")
-                model_compliance_path = change_folder_name_in_path(
-                    model_results_path, "results", "compliance")
+                model_measurements_path = model_results_path
+                model_compliance_path = model_results_path
                 model_code_path = os.path.join(
                     change_folder_name_in_path(
                         log_path, "results", "code"), model)
@@ -301,8 +297,7 @@ def clean_invalid_results(args, log_path, config, system_desc, system_json,
                             f"{scenario} scenario result is invalid for {system_desc}: {model} in {division} and open divisions. Accuracy: {accuracy_is_valid}, Performance: {perf_is_valid}. Removing it...")
                         if os.path.exists(scenario_path):
                             shutil.rmtree(scenario_path)
-                        scenario_measurements_path = change_folder_name_in_path(
-                            scenario_path, "results", "measurements")
+                        scenario_measurements_path = scenario_path
                         if os.path.exists(scenario_measurements_path):
                             shutil.rmtree(scenario_measurements_path)
                     if not os.path.exists(target_results_path):
