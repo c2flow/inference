@@ -2,10 +2,10 @@
 export VLLM_WORKER_MULTIPROC_METHOD="spawn"
 
 # Set CHECKPOINT_PATH, DATASET_PATH, OUTPUT_LOG_DIR, and GPU_COUNT
-CHECKPOINT_PATH="${CHECKPOINT_PATH:meta-llama/Meta-Llama-3.1-8B-Instruct}"
-DATASET_PATH="${DATASET_PATH:cnn_eval.json}"
-OUTPUT_LOG_DIR="${OUTPUT_LOG_DIR:output}"
-GPU_COUNT="${GPU_COUNT:8}"
+CHECKPOINT_PATH="${CHECKPOINT_PATH:-meta-llama/Meta-Llama-3.1-8B-Instruct}"
+DATASET_PATH="${DATASET_PATH:-cnn_eval.json}"
+OUTPUT_LOG_DIR="${OUTPUT_LOG_DIR:-output}"
+GPU_COUNT="${GPU_COUNT:-8}"
 
 # Create output log directory
 mkdir -p ${OUTPUT_LOG_DIR}
