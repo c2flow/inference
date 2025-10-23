@@ -162,6 +162,7 @@ class SUT:
             self.model_path,
             dtype=self.dtype,
             tensor_parallel_size=self.tensor_parallel_size,
+            distributed_executor_backend='mp',
         )
         log.info("Loaded model")
 
