@@ -10,7 +10,7 @@ GPU_COUNT="${GPU_COUNT:8}"
 # Create output log directory
 mkdir -p ${OUTPUT_LOG_DIR}
 
-python -u main.py --scenario Offline \
+python3 -u main.py --scenario Offline \
     --model-path ${CHECKPOINT_PATH} \
     --batch-size 16 \
     --dtype bfloat16 \
