@@ -65,8 +65,15 @@ def main():
     dataset_path = args.dataset_file
     total_sample_count = args.total_sample_count
     metric = evaluate.load("rouge")
-    nltk.download("punkt")
-    nltk.download('punkt_tab')
+    try:
+        from nltk.data import find
+        find('tokenizers/punkt')
+    except LookupError:
+        nltk.download("punkt")
+    try:
+        find('tokenizers/punkt_tab')
+    except LookupError:
+        nltk.download('punkt_tab')
 
     tokenizer = AutoTokenizer.from_pretrained(
         model_name,
