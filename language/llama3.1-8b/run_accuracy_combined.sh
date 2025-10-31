@@ -13,60 +13,63 @@ echo "Experiment execution started at $(date)" > "$EXECUTION_LOG"
 # Arrays for parameters to iterate over
 declare -a GPU_COUNTS=(1 2 4 8)
 declare -a DTYPES=("bfloat16" "float16")
+declare -a BATCH_SIZES=(1 4 16 64)
 
 BASE_LOG_DIR="output_accuracy_offline"
 
 # Iterate through all combinations
 for gpu_count in "${GPU_COUNTS[@]}"; do
   for dtype in "${DTYPES[@]}"; do
-    echo "========================================"
-    echo "Running experiment with GPU_COUNT=$gpu_count, DTYPE=$dtype, BATCH_SIZE=$BATCH_SIZE"
-    echo "========================================"
-    
-    # Create unique output directory for this experiment
-    EXP_LOG_DIR="${BASE_LOG_DIR}/exp__tp_${gpu_count}__dtype_${dtype}__bs_${BATCH_SIZE}"
-    mkdir -p "${EXP_LOG_DIR}"
-    
-    # Run the experiment with error handling
-    {
-      python3 -u main.py --scenario Offline \
-          --model-path "${CHECKPOINT_PATH}" \
-          --batch-size "${BATCH_SIZE}" \
-          --accuracy \
-          --dtype "${dtype}" \
-          --user-conf user.conf \
-          --total-sample-count 13368 \
-          --dataset-path "${DATASET_PATH}" \
-          --output-log-dir "${EXP_LOG_DIR}" \
-          --tensor-parallel-size "${gpu_count}" \
-          --vllm 2>&1 | tee "${EXP_LOG_DIR}/offline.log"
+    for batch_size in "${BATCH_SIZES[@]}"; do
+      echo "========================================"
+      echo "Running experiment with GPU_COUNT=$gpu_count, DTYPE=$dtype, BATCH_SIZE=$batch_size"
+      echo "========================================"
       
-      # 检查主程序是否成功执行
-      if [ ${PIPESTATUS[0]} -eq 0 ]; then
-        echo "Main script for GPU_COUNT=$gpu_count, DTYPE=$dtype SUCCEEDED"
+      # Create unique output directory for this experiment
+      EXP_LOG_DIR="${BASE_LOG_DIR}/exp__tp_${gpu_count}__dtype_${dtype}__bs_${batch_size}"
+      mkdir -p "${EXP_LOG_DIR}"
+      
+      # Run the experiment with error handling
+      {
+        python3 -u main.py --scenario Offline \
+            --model-path "${CHECKPOINT_PATH}" \
+            --batch-size "${batch_size}" \
+            --accuracy \
+            --dtype "${dtype}" \
+            --user-conf user.conf \
+            --total-sample-count 13368 \
+            --dataset-path "${DATASET_PATH}" \
+            --output-log-dir "${EXP_LOG_DIR}" \
+            --tensor-parallel-size "${gpu_count}" \
+            --vllm 2>&1 | tee "${EXP_LOG_DIR}/offline.log"
         
-        # 如果主程序成功，运行评估脚本
-        python evaluation.py \
-            --mlperf-accuracy-file "${EXP_LOG_DIR}/mlperf_log_accuracy.json" \
-            --model-name "${CHECKPOINT_PATH}" \
-            --dataset-file "${DATASET_PATH}" \
-            --dtype int32 \
-            2>&1 | tee "${EXP_LOG_DIR}/offline_accuracy.log"
-            
-        # 检查评估脚本是否成功执行
-        if [ $? -eq 0 ]; then
-          echo "Evaluation for GPU_COUNT=$gpu_count, DTYPE=$dtype SUCCEEDED" | tee -a "$EXECUTION_LOG"
+        # 检查主程序是否成功执行
+        if [ ${PIPESTATUS[0]} -eq 0 ]; then
+          echo "Main script for GPU_COUNT=$gpu_count, DTYPE=$dtype SUCCEEDED"
+          
+          # 如果主程序成功，运行评估脚本
+          python evaluation.py \
+              --mlperf-accuracy-file "${EXP_LOG_DIR}/mlperf_log_accuracy.json" \
+              --model-name "${CHECKPOINT_PATH}" \
+              --dataset-file "${DATASET_PATH}" \
+              --dtype int32 \
+              2>&1 | tee "${EXP_LOG_DIR}/offline_accuracy.log"
+              
+          # 检查评估脚本是否成功执行
+          if [ $? -eq 0 ]; then
+            echo "Evaluation for GPU_COUNT=$gpu_count, DTYPE=$dtype, BATCH_SIZE=$batch_size SUCCEEDED" | tee -a "$EXECUTION_LOG"
+          else
+            echo "Evaluation for GPU_COUNT=$gpu_count, DTYPE=$dtype, BATCH_SIZE=$batch_size FAILED" | tee -a "$EXECUTION_LOG"
+          fi
         else
-          echo "Evaluation for GPU_COUNT=$gpu_count, DTYPE=$dtype FAILED" | tee -a "$EXECUTION_LOG"
+          echo "Main script for GPU_COUNT=$gpu_count, DTYPE=$dtype, BATCH_SIZE=$batch_size FAILED" | tee -a "$EXECUTION_LOG"
         fi
-      else
-        echo "Main script for GPU_COUNT=$gpu_count, DTYPE=$dtype FAILED" | tee -a "$EXECUTION_LOG"
-      fi
-    }
+      }
 
-        
-    # Sleep for a short time to ensure proper cleanup between runs
-    sleep 120
+          
+      # Sleep for a short time to ensure proper cleanup between runs
+      sleep 120
+    done
   done
 done
 
