@@ -17,10 +17,21 @@ for exp_dir in output_offline/exp*; do
     if [ -f "$exp_dir/offline.log" ]; then
       samples_per_sec=$(grep -m 1 "Samples per second:" "$exp_dir/offline.log" | awk '{print $4}')
       tokens_per_sec=$(grep -m 1 "Tokens per second:" "$exp_dir/offline.log" | awk '{print $4}')
+      # 提取结果合法性指标
+      result_is=$(grep -m 1 "Result is :" "$exp_dir/offline.log" | awk -F': ' '{print $2}')
+      min_duration=$(grep -m 1 "Min duration satisfied :" "$exp_dir/offline.log" | awk -F': ' '{print $2}')
+      min_queries=$(grep -m 1 "Min queries satisfied :" "$exp_dir/offline.log" | awk -F': ' '{print $2}')
+      early_stopping=$(grep -m 1 "Early stopping satisfied:" "$exp_dir/offline.log" | awk -F': ' '{print $2}')
+      
       echo "场景：Offline (PerformanceOnly)" >> "$OUTPUT_FILE"
       echo "  性能指标:" >> "$OUTPUT_FILE"
       echo "    每秒样本数(Samples per second): ${samples_per_sec:-N/A}" >> "$OUTPUT_FILE"
       echo "    每秒tokens数(Tokens per second): ${tokens_per_sec:-N/A}" >> "$OUTPUT_FILE"
+      echo "  结果合法性:" >> "$OUTPUT_FILE"
+      echo "    Result is : ${result_is:-N/A}" >> "$OUTPUT_FILE"
+      echo "    Min duration satisfied : ${min_duration:-N/A}" >> "$OUTPUT_FILE"
+      echo "    Min queries satisfied : ${min_queries:-N/A}" >> "$OUTPUT_FILE"
+      echo "    Early stopping satisfied: ${early_stopping:-N/A}" >> "$OUTPUT_FILE"
     fi
 
     # 构造对应的准确率结果目录
