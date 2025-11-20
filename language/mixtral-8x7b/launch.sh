@@ -1,10 +1,12 @@
 #!/bin/bash
 
 MLCOMMONS_REPO_PATH="$(dirname "$(dirname "$PWD")")"
+MLCOMMONS_ALL_PATH="$(dirname "$MLCOMMONS_REPO_PATH")"
 
 # Add any volume mounts here with the following syntax
 # /path/to/src:/path/to/dir/in/container
 MOUNTS=(
+    $MLCOMMONS_ALL_PATH:$MLCOMMONS_ALL_PATH
     $MLCOMMONS_REPO_PATH:$MLCOMMONS_REPO_PATH
 )
 
@@ -27,7 +29,7 @@ for _mount in ${MOUNTS[@]}; do
 done
 
 set -x
-nvidia-docker run -it --rm --net=host --runtime=nvidia --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 \
+docker run -it --rm --gpus all --net=host --runtime=nvidia --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 \
   --cap-add=SYS_PTRACE --cap-add=SYS_ADMIN --cap-add=DAC_READ_SEARCH \
   --security-opt seccomp=unconfined \
   -w $PWD \
