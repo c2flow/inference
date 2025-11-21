@@ -19,7 +19,7 @@ echo "CI_BUILD_GID=`id -g`" >> .docker_env
 cat .docker_env
 
 # Build container
-docker build . -t llm/gpubringup
+docker build --network=host . -t llm/gpubringup
 
 # Build mount flags
 declare -a MOUNT_FLAGS
