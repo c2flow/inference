@@ -132,7 +132,7 @@ class Dataset:
             if (dataset_list[i] == "MBXP"):
                 aux = self.mbxp_stop(aux)
             aux_seq.append(aux)
-        output_seq = np.stack(aux_seq)
+        output_seq = aux_seq
 
         # Save outputs
         if not os.path.exists("run_outputs"):
