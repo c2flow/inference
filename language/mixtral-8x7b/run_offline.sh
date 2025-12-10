@@ -12,7 +12,7 @@ CHECKPOINT_PATH="${MLCOMMONS_ALL_PATH}/model/Mixtral-8x7B-Instruct-v0.1"
 DATASET_PATH="${MLCOMMONS_ALL_PATH}/dataset/2024_06_06_mixtral_15k_v4.pkl"
 
 # Set BATCH_SIZE and OUTPUT_LOG_DIR
-BATCH_SIZE=16
+BATCH_SIZE=1
 OUTPUT_LOG_DIR="output_offline_bs${BATCH_SIZE}"
 
 # Create output log directory

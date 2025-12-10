@@ -165,9 +165,6 @@ class SUT:
             self.amp_enabled = False
             self.amp_dtype = torch.float32
 
-        if "cuda" in self.device:
-            assert torch.cuda.is_available(), "torch gpu is not available, exiting..."
-
         self.dataset_path = dataset_path
         self.data_object = Dataset(
             self.model_path,

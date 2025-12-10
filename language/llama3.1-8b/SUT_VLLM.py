@@ -163,7 +163,7 @@ class SUT:
             dtype=self.dtype,
             tensor_parallel_size=self.tensor_parallel_size,
             distributed_executor_backend='mp',
-            gpu_memory_utilization=0.8,
+            gpu_memory_utilization=0.9,
         )
         log.info("Loaded model")
 
