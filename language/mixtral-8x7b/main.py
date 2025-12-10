@@ -4,7 +4,6 @@ import argparse
 import os
 import logging
 import sys
-from SUT import SUT, SUTServer
 
 sys.path.insert(0, os.getcwd())
 
@@ -90,6 +89,13 @@ def get_args():
         default=1,
         help="Number of workers to process queries",
     )
+    parser.add_argument(
+        "--tensor-parallel-size",
+        type=int,
+        default=8,
+        help="Tensor parallel size for vllm",
+    )
+    parser.add_argument("--vllm", action="store_true", help="vllm mode")
 
     args = parser.parse_args()
     return args
@@ -99,9 +105,6 @@ scenario_map = {
     "offline": lg.TestScenario.Offline,
     "server": lg.TestScenario.Server,
 }
-
-sut_map = {"offline": SUT, "server": SUTServer}
-
 
 def main():
     args = get_args()
@@ -125,16 +128,33 @@ def main():
     log_settings.log_output = log_output_settings
     log_settings.enable_trace = args.enable_log_trace
 
+    if args.vllm:
+        from SUT_VLLM import SUT, SUTServer
+    else:
+        from SUT import SUT, SUTServer
+
+    sut_map = {"offline": SUT, "server": SUTServer}
     sut_cls = sut_map[args.scenario.lower()]
 
-    sut = sut_cls(
-        model_path=args.model_path,
-        dtype=args.dtype,
-        batch_size=args.batch_size,
-        dataset_path=args.dataset_path,
-        total_sample_count=args.total_sample_count,
-        device=args.device,
-    )
+    if args.vllm:
+        sut = sut_cls(
+            model_path=args.model_path,
+            dtype=args.dtype,
+            batch_size=args.batch_size,
+            dataset_path=args.dataset_path,
+            total_sample_count=args.total_sample_count,
+            workers=args.num_workers,
+            tensor_parallel_size=args.tensor_parallel_size
+        )
+    else:
+        sut = sut_cls(
+            model_path=args.model_path,
+            dtype=args.dtype,
+            batch_size=args.batch_size,
+            dataset_path=args.dataset_path,
+            total_sample_count=args.total_sample_count,
+            device=args.device,
+        )
 
     # Start sut before loadgen starts
     sut.start()
