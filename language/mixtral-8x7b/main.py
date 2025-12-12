@@ -96,6 +96,11 @@ def get_args():
         help="Tensor parallel size for vllm",
     )
     parser.add_argument("--vllm", action="store_true", help="vllm mode")
+    parser.add_argument(
+        "--use-cached-outputs",
+        action="store_true",
+        help="Use cached outputs from previous accuracy runs"
+    )
 
     args = parser.parse_args()
     return args
@@ -143,6 +148,7 @@ def main():
             batch_size=args.batch_size,
             dataset_path=args.dataset_path,
             total_sample_count=args.total_sample_count,
+            use_cached_outputs=args.use_cached_outputs,
             workers=args.num_workers,
             tensor_parallel_size=args.tensor_parallel_size
         )
@@ -153,6 +159,7 @@ def main():
             batch_size=args.batch_size,
             dataset_path=args.dataset_path,
             total_sample_count=args.total_sample_count,
+            use_cached_outputs=args.use_cached_outputs,
             device=args.device,
         )
 

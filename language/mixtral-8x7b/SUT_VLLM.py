@@ -108,14 +108,27 @@ class SUT:
 
             query_ids = [q.index for q in qitem]
 
-            tik1 = time.time()
+            fname = "q" + "_".join([str(i) for i in query_ids])
+            fname = f"run_outputs/{fname}.pkl"
+            _p = Path(fname)
+            if self.use_cached_outputs and _p.exists():
+                # Read cache
+                with _p.open(mode="rb") as f:
+                    d = pickle.load(f)
+                processed_output = d["outputs"]
+                tik1 = None
+                tik2 = None
+                tik3 = None
+                tok = None
+            else:
+                tik1 = time.time()
 
-            # Get dataset names for postProcess
-            input_dataset = [self.data_object.dataset_names[q.index] for q in qitem]
-            # Get input lengths for postProcess
-            input_lens = [self.data_object.input_lens[q.index] for q in qitem]
+                # Get dataset names for postProcess
+                input_dataset = [self.data_object.dataset_names[q.index] for q in qitem]
+                # Get input lengths for postProcess
+                input_lens = [self.data_object.input_lens[q.index] for q in qitem]
 
-            tik2 = time.time()
+                tik2 = time.time()
 
             # Original SUT.py uses tokenizer.batch_encode_plus to get input_ids
             # But vllm expects prompts (strings) or TokensPrompt objects
@@ -155,6 +168,12 @@ class SUT:
                 dataset_list=input_dataset,
             )
 
+            # Save to cache if not using cached outputs
+            if not self.use_cached_outputs:
+                os.makedirs("run_outputs", exist_ok=True)
+                with _p.open(mode="wb") as f:
+                    pickle.dump({"outputs": processed_output}, f)
+
             for i in range(len(qitem)):
                 n_tokens = processed_output[i].shape[0]
                 response_array = array.array(
@@ -178,6 +197,8 @@ class SUT:
                     log.info(f"\tInference time: {tik3 - tik2}")
                     log.info(f"\tPostprocess time: {tok - tik3}")
                     log.info(f"\t==== Total time: {tok - tik1}")
+                else:
+                    log.info(f"\tLoaded from cache: {_p}")
 
     def load_model(self):
         log.info("Loading model...")
