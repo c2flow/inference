@@ -1,9 +1,15 @@
 # Set VLLM_WORKER_MULTIPROC_METHOD to spawn to avoid CUDA error
 export VLLM_WORKER_MULTIPROC_METHOD="spawn"
 
-# Set CHECKPOINT_PATH and DATASET_PATH
-CHECKPOINT_PATH="${CHECKPOINT_PATH:-meta-llama/Meta-Llama-3.1-8B-Instruct}"
-DATASET_PATH="${DATASET_PATH:-cnn_eval.json}"
+MLCOMMONS_ALL_PATH="$(dirname "$(dirname "$(dirname "$PWD")")")"
+
+# Set NLTK_DATA and HF_HOME
+export NLTK_DATA="${MLCOMMONS_ALL_PATH}/nltk_data"
+export HF_HOME="${MLCOMMONS_ALL_PATH}/huggingface"
+
+# Set CHECKPOINT_PATH, DATASET_PATH
+CHECKPOINT_PATH="${MLCOMMONS_ALL_PATH}/model/Meta-Llama-3.1-8B-Instruct"
+DATASET_PATH="${MLCOMMONS_ALL_PATH}/dataset/cnn_eval.json"
 
 # Log file for overall execution
 EXECUTION_LOG="execution_summary.log"
@@ -12,7 +18,7 @@ echo "Experiment execution started at $(date)" > "$EXECUTION_LOG"
 # Arrays for parameters to iterate over
 declare -a GPU_COUNTS=(1 2 4 8)
 declare -a DTYPES=("bfloat16" "float16")
-declare -a BATCH_SIZES=(1 4 16 64 256)
+declare -a BATCH_SIZES=(1 4 16 64 256 1024)
 
 BASE_LOG_DIR="output_accuracy_offline"
 
