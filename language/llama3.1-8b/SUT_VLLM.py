@@ -112,7 +112,7 @@ class SUT:
             tik1 = time.time()
 
             input_ids_tensor = [
-                self.data_object.input_ids[q.index] for q in qitem]
+                TokensPrompt(prompt_token_ids=self.data_object.input_ids[q.index]) for q in qitem]
             # input_text_tensor = [
             #     self.data_object.input[q.index] for q in qitem]
             # for in_text in input_text_tensor:
@@ -120,7 +120,7 @@ class SUT:
 
             tik2 = time.time()
             outputs = self.model.generate(
-                prompt_token_ids=input_ids_tensor, sampling_params=self.sampling_params
+                prompts=input_ids_tensor, sampling_params=self.sampling_params
             )
             pred_output_tokens = []
             for output in outputs:
