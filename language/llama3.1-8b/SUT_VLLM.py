@@ -37,7 +37,9 @@ class SUT:
         # Set this to True *only for test accuracy runs* in case your prior
         # session was killed partway through
         workers=1,
-        tensor_parallel_size=8
+        tensor_parallel_size=8,
+        max_model_len=None,
+        enable_chunked_prefill=False
     ):
 
         self.model_path = model_path or f"meta-llama/Meta-Llama-3.1-8B-Instruct"
@@ -48,6 +50,8 @@ class SUT:
 
         self.dtype = dtype
         self.tensor_parallel_size = tensor_parallel_size
+        self.max_model_len = max_model_len
+        self.enable_chunked_prefill = enable_chunked_prefill
 
         if not torch.cuda.is_available():
             assert False, "torch gpu is not available, exiting..."
@@ -164,6 +168,8 @@ class SUT:
             tensor_parallel_size=self.tensor_parallel_size,
             distributed_executor_backend='mp',
             gpu_memory_utilization=0.9,
+            max_model_len=self.max_model_len,
+            enable_chunked_prefill=self.enable_chunked_prefill,
         )
         log.info("Loaded model")
 

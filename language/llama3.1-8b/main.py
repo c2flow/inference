@@ -108,6 +108,18 @@ def get_args():
     )
     parser.add_argument("--vllm", action="store_true", help="vllm mode")
     parser.add_argument(
+        "--max-model-len",
+        type=int,
+        default=None,
+        help="Maximum model length (context window size). Default is None (use model default)",
+    )
+    parser.add_argument(
+        "--enable-chunked-prefill",
+        action="store_true",
+        default=False,
+        help="Enable chunked prefill optimization for long sequences",
+    )
+    parser.add_argument(
         "--api-model-name",
         type=str,
         default="meta-llama/Meta-Llama-3.1-8B-Instruct",
@@ -177,7 +189,9 @@ def main():
             dataset_path=args.dataset_path,
             total_sample_count=args.total_sample_count,
             workers=args.num_workers,
-            tensor_parallel_size=args.tensor_parallel_size
+            tensor_parallel_size=args.tensor_parallel_size,
+            max_model_len=args.max_model_len,
+            enable_chunked_prefill=args.enable_chunked_prefill
         )
     else:
         sut = sut_cls(
