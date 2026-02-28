@@ -120,6 +120,36 @@ def get_args():
         help="Enable chunked prefill optimization for long sequences",
     )
     parser.add_argument(
+        "--block-size",
+        type=int,
+        default=None,
+        help="Block size for KV cache. Default is None (use vllm default, typically 16). Set to 64 for enflame hardware",
+    )
+    parser.add_argument(
+        "--max-seq-len-to-capture",
+        type=int,
+        default=None,
+        help="Maximum sequence length to capture for CUDA graph. Default is None (use vllm default). Set to 8192 for enflame hardware",
+    )
+    parser.add_argument(
+        "--gpu-memory-utilization",
+        type=float,
+        default=0.9,
+        help="GPU memory utilization ratio (0.0 to 1.0). Default is 0.9",
+    )
+    parser.add_argument(
+        "--max-num-batched-tokens",
+        type=int,
+        default=None,
+        help="Maximum number of batched tokens. Default is None (use vllm default). Set to 8192 for enflame hardware",
+    )
+    parser.add_argument(
+        "--max-num-seqs",
+        type=int,
+        default=1024,
+        help="Maximum number of sequences. Default is 1024",
+    )
+    parser.add_argument(
         "--api-model-name",
         type=str,
         default="meta-llama/Meta-Llama-3.1-8B-Instruct",
@@ -191,7 +221,12 @@ def main():
             workers=args.num_workers,
             tensor_parallel_size=args.tensor_parallel_size,
             max_model_len=args.max_model_len,
-            enable_chunked_prefill=args.enable_chunked_prefill
+            enable_chunked_prefill=args.enable_chunked_prefill,
+            block_size=args.block_size,
+            max_seq_len_to_capture=args.max_seq_len_to_capture,
+            gpu_memory_utilization=args.gpu_memory_utilization,
+            max_num_batched_tokens=args.max_num_batched_tokens,
+            max_num_seqs=args.max_num_seqs
         )
     else:
         sut = sut_cls(

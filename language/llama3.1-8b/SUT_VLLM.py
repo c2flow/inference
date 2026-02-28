@@ -39,7 +39,12 @@ class SUT:
         workers=1,
         tensor_parallel_size=8,
         max_model_len=None,
-        enable_chunked_prefill=False
+        enable_chunked_prefill=False,
+        block_size=None,
+        max_seq_len_to_capture=None,
+        gpu_memory_utilization=0.9,
+        max_num_batched_tokens=None,
+        max_num_seqs=1024
     ):
 
         self.model_path = model_path or f"meta-llama/Meta-Llama-3.1-8B-Instruct"
@@ -52,6 +57,11 @@ class SUT:
         self.tensor_parallel_size = tensor_parallel_size
         self.max_model_len = max_model_len
         self.enable_chunked_prefill = enable_chunked_prefill
+        self.block_size = block_size
+        self.max_seq_len_to_capture = max_seq_len_to_capture
+        self.gpu_memory_utilization = gpu_memory_utilization
+        self.max_num_batched_tokens = max_num_batched_tokens
+        self.max_num_seqs = max_num_seqs
 
         if not torch.cuda.is_available():
             assert False, "torch gpu is not available, exiting..."
@@ -167,9 +177,13 @@ class SUT:
             dtype=self.dtype,
             tensor_parallel_size=self.tensor_parallel_size,
             distributed_executor_backend='mp',
-            gpu_memory_utilization=0.9,
+            gpu_memory_utilization=self.gpu_memory_utilization,
             max_model_len=self.max_model_len,
             enable_chunked_prefill=self.enable_chunked_prefill,
+            block_size=self.block_size,
+            max_seq_len_to_capture=self.max_seq_len_to_capture,
+            max_num_batched_tokens=self.max_num_batched_tokens,
+            max_num_seqs=self.max_num_seqs,
         )
         log.info("Loaded model")
 
