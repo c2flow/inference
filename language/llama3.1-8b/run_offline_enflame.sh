@@ -24,10 +24,8 @@ declare -a GPU_COUNTS=(1 2 4 8)
 BASE_LOG_DIR="output_offline"
 BLOCK_SIZE=64
 MAX_MODEL_LEN=8192
-MAX_NUM_BATCHED_TOKENS=8192
-MAX_SEQ_LEN_TO_CAPTURE=2024
+MAX_NUM_BATCHED_TOKENS=4096
 GPU_MEMORY_UTILIZATION=0.95
-MAX_NUM_SEQS=256
 
 # Iterate through all combinations
 for gpu_count in "${GPU_COUNTS[@]}"; do
@@ -36,7 +34,7 @@ for gpu_count in "${GPU_COUNTS[@]}"; do
   echo "========================================"
   
   # Create unique output directory for this experiment
-  EXP_LOG_DIR="${BASE_LOG_DIR}/exp__tp_${gpu_count}_${BLOCK_SIZE}_${MAX_MODEL_LEN}_${MAX_NUM_BATCHED_TOKENS}_${MAX_SEQ_LEN_TO_CAPTURE}_${MAX_NUM_SEQS}_${GPU_MEMORY_UTILIZATION}"
+  EXP_LOG_DIR="${BASE_LOG_DIR}/exp__tp_${gpu_count}_${BLOCK_SIZE}_${MAX_MODEL_LEN}_${MAX_NUM_BATCHED_TOKENS}_${GPU_MEMORY_UTILIZATION}"
   mkdir -p "${EXP_LOG_DIR}"
   
   # Run the experiment with error handling
@@ -53,10 +51,8 @@ for gpu_count in "${GPU_COUNTS[@]}"; do
         --max-model-len "${MAX_MODEL_LEN}" \
         --enable-chunked-prefill \
         --block-size "${BLOCK_SIZE}" \
-        --max-seq-len-to-capture "${MAX_SEQ_LEN_TO_CAPTURE}" \
         --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS}" \
         --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION}" \
-        --max-num-seqs "${MAX_NUM_SEQS}" \
         --vllm 2>&1 | tee "${EXP_LOG_DIR}/offline.log"
     
     # Check if the experiment succeeded

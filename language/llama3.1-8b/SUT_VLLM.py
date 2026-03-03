@@ -181,7 +181,6 @@ class SUT:
             max_model_len=self.max_model_len,
             enable_chunked_prefill=self.enable_chunked_prefill,
             block_size=self.block_size,
-            max_seq_len_to_capture=self.max_seq_len_to_capture,
             max_num_batched_tokens=self.max_num_batched_tokens,
             max_num_seqs=self.max_num_seqs,
         )
