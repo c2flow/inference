@@ -16,13 +16,13 @@ EXECUTION_LOG="execution_summary.log"
 echo "Experiment execution started at $(date)" > "$EXECUTION_LOG"
 
 BASE_LOG_DIR="output_offline"
-MAX_MODEL_LEN=5120
-MAX_NUM_BATCHED_TOKENS=3072
+MAX_MODEL_LEN=8192
+MAX_NUM_BATCHED_TOKENS=4096
 GPU_MEMORY_UTILIZATION=0.95
 GPU_COUNT=1
 
 # Create unique output directory for this experiment
-EXP_LOG_DIR="${BASE_LOG_DIR}/exp__fp8_tp_${gpu_count}_${MAX_MODEL_LEN}_${MAX_NUM_BATCHED_TOKENS}_${GPU_MEMORY_UTILIZATION}"
+EXP_LOG_DIR="${BASE_LOG_DIR}/exp__fp8_tp_${GPU_COUNT}_${MAX_MODEL_LEN}_${MAX_NUM_BATCHED_TOKENS}_${GPU_MEMORY_UTILIZATION}"
 mkdir -p "${EXP_LOG_DIR}"
 
 # Run the experiment with error handling

@@ -132,7 +132,7 @@ def main():
     )
     result = {k: f"{round(np.mean(v) * 100, 4)}" for k, v in result.items()}
     prediction_lens = [len(pred) for pred in preds]
-    result["gen_len"] = np.sum(prediction_lens)
+    result["gen_len"] = int(np.sum(prediction_lens))
     result["gen_num"] = len(preds)
     print("\nResults\n")
     print(result)
