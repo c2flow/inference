@@ -106,6 +106,12 @@ def get_args():
         default=8,
         help="Number of workers to process queries",
     )
+    parser.add_argument(
+        "--pipeline-parallel-size",
+        type=int,
+        default=1,
+        help="Pipeline parallel size for model distribution across GPUs"
+    )
     parser.add_argument("--vllm", action="store_true", help="vllm mode")
     parser.add_argument(
         "--max-model-len",
@@ -220,6 +226,7 @@ def main():
             total_sample_count=args.total_sample_count,
             workers=args.num_workers,
             tensor_parallel_size=args.tensor_parallel_size,
+            pipeline_parallel_size=args.pipeline_parallel_size,
             max_model_len=args.max_model_len,
             enable_chunked_prefill=args.enable_chunked_prefill,
             block_size=args.block_size,

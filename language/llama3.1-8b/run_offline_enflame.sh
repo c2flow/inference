@@ -26,6 +26,7 @@ BLOCK_SIZE=64
 MAX_MODEL_LEN=8192
 MAX_NUM_BATCHED_TOKENS=4096
 GPU_MEMORY_UTILIZATION=0.95
+PIPELINE_PARALLEL_SIZE=1
 
 # Iterate through all combinations
 for gpu_count in "${GPU_COUNTS[@]}"; do
@@ -34,7 +35,7 @@ for gpu_count in "${GPU_COUNTS[@]}"; do
   echo "========================================"
   
   # Create unique output directory for this experiment
-  EXP_LOG_DIR="${BASE_LOG_DIR}/exp__tp_${gpu_count}_${BLOCK_SIZE}_${MAX_MODEL_LEN}_${MAX_NUM_BATCHED_TOKENS}_${GPU_MEMORY_UTILIZATION}"
+  EXP_LOG_DIR="${BASE_LOG_DIR}/exp__tp_${gpu_count}_pp_${PIPELINE_PARALLEL_SIZE}_${BLOCK_SIZE}_${MAX_MODEL_LEN}_${MAX_NUM_BATCHED_TOKENS}_${GPU_MEMORY_UTILIZATION}"
   mkdir -p "${EXP_LOG_DIR}"
   
   # Run the experiment with error handling
@@ -48,6 +49,7 @@ for gpu_count in "${GPU_COUNTS[@]}"; do
         --dataset-path "${DATASET_PATH}" \
         --output-log-dir "${EXP_LOG_DIR}" \
         --tensor-parallel-size "${gpu_count}" \
+        --pipeline-parallel-size "${PIPELINE_PARALLEL_SIZE}" \
         --max-model-len "${MAX_MODEL_LEN}" \
         --enable-chunked-prefill \
         --block-size "${BLOCK_SIZE}" \

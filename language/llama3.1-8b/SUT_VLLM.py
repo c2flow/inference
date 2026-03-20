@@ -38,6 +38,7 @@ class SUT:
         # session was killed partway through
         workers=1,
         tensor_parallel_size=8,
+        pipeline_parallel_size=1,
         max_model_len=None,
         enable_chunked_prefill=False,
         block_size=None,
@@ -55,6 +56,7 @@ class SUT:
 
         self.dtype = dtype
         self.tensor_parallel_size = tensor_parallel_size
+        self.pipeline_parallel_size = pipeline_parallel_size
         self.max_model_len = max_model_len
         self.enable_chunked_prefill = enable_chunked_prefill
         self.block_size = block_size
@@ -176,6 +178,7 @@ class SUT:
             self.model_path,
             dtype=self.dtype,
             tensor_parallel_size=self.tensor_parallel_size,
+            pipeline_parallel_size=self.pipeline_parallel_size,
             distributed_executor_backend='mp',
             gpu_memory_utilization=self.gpu_memory_utilization,
             max_model_len=self.max_model_len,

@@ -13,9 +13,9 @@ DATASET_PATH="${MLCOMMONS_ALL_PATH}/dataset/cnn_eval.json"
 
 # Log file for overall execution
 EXECUTION_LOG="execution_summary.log"
-echo "Accuracy test execution started at $(date)" > "$EXECUTION_LOG"
+echo "Experiment execution started at $(date)" > "$EXECUTION_LOG"
 
-BASE_LOG_DIR="output_accuracy_offline"
+BASE_LOG_DIR="output_offline"
 MAX_MODEL_LEN=8192
 MAX_NUM_BATCHED_TOKENS=4096
 GPU_MEMORY_UTILIZATION=0.95
@@ -26,12 +26,11 @@ PIPELINE_PARALLEL_SIZE=1
 EXP_LOG_DIR="${BASE_LOG_DIR}/exp__fp8_tp_${GPU_COUNT}_pp_${PIPELINE_PARALLEL_SIZE}_${MAX_MODEL_LEN}_${MAX_NUM_BATCHED_TOKENS}_${GPU_MEMORY_UTILIZATION}"
 mkdir -p "${EXP_LOG_DIR}"
 
-# Run the accuracy test with error handling
+# Run the experiment with error handling
 {
 python3 -u main.py --scenario Offline \
     --model-path "${CHECKPOINT_PATH}" \
     --batch-size 13368 \
-    --accuracy \
     --dtype auto \
     --user-conf user.conf \
     --total-sample-count 13368 \
@@ -46,15 +45,7 @@ python3 -u main.py --scenario Offline \
     --vllm 2>&1 | tee "${EXP_LOG_DIR}/offline.log"
 }
 
-# Run accuracy evaluation
-python evaluation.py \
-    --mlperf-accuracy-file "${EXP_LOG_DIR}/mlperf_log_accuracy.json" \
-    --model-name "${CHECKPOINT_PATH}" \
-    --dataset-file "${DATASET_PATH}" \
-    --dtype int32 \
-    2>&1 | tee "${EXP_LOG_DIR}/offline_accuracy.log"
-
-echo "Accuracy test execution completed at $(date)" >> "$EXECUTION_LOG"
-echo "Summary of accuracy test:"
-echo "-------------------------"
+echo "Experiment execution completed at $(date)" >> "$EXECUTION_LOG"
+echo "Summary of experiments:"
+echo "----------------------"
 cat "$EXECUTION_LOG"
