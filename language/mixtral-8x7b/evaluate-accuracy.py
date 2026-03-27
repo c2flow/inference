@@ -120,8 +120,15 @@ def main():
     dataset_path = args.dataset_file
     checkpoint_path = args.checkpoint_path
     metric = evaluate.load("rouge")
-    nltk.download("punkt")
-    nltk.download("punkt_tab")
+    try:
+        from nltk.data import find
+        find('tokenizers/punkt')
+    except LookupError:
+        nltk.download("punkt")
+    try:
+        find('tokenizers/punkt_tab')
+    except LookupError:
+        nltk.download('punkt_tab')
 
     tokenizer = AutoTokenizer.from_pretrained(
         checkpoint_path,

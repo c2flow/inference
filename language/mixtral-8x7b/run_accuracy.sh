@@ -38,14 +38,15 @@ BATCH_SIZE=${1:-1}
 USE_VLLM=${2:-1}  # 0 = transformers, 1 = vllm (default: vllm)
 TENSOR_PARALLEL_SIZE=${3:-8}
 USE_CACHE=${4:-0}  # 0 = fresh run, 1 = use cached outputs
+DTYPE="float16"
 
 # Set output directory based on mode
 if [ "$USE_VLLM" = "1" ]; then
     MODE="vllm"
-    OUTPUT_LOG_DIR="output_accuracy_bs${BATCH_SIZE}_tp${TENSOR_PARALLEL_SIZE}_vllm"
+    OUTPUT_LOG_DIR="output_accuracy_bs${BATCH_SIZE}_tp${TENSOR_PARALLEL_SIZE}_vllm_${DTYPE}"
 else
     MODE="transformers"
-    OUTPUT_LOG_DIR="output_accuracy_bs${BATCH_SIZE}_transformers"
+    OUTPUT_LOG_DIR="output_accuracy_bs${BATCH_SIZE}_transformers_${DTYPE}"
 fi
 
 # Add cache indicator to output directory if using cache
@@ -81,7 +82,7 @@ CMD_ARGS="--scenario Offline \
         --dataset-path ${DATASET_PATH} \
         --output-log-dir ${OUTPUT_LOG_DIR} \
         --batch-size ${BATCH_SIZE} \
-        --dtype float32 \
+        --dtype ${DTYPE} \
         --device cuda:0"
 
 # Add vllm-specific arguments if enabled
@@ -117,14 +118,8 @@ if [ -e "${ACCURACY_LOG_FILE}" ]; then
         --checkpoint-path ${CHECKPOINT_PATH} \
         --mlperf-accuracy-file ${ACCURACY_LOG_FILE} \
         --dataset-file ${DATASET_PATH} \
-        --dtype int32 2>&1 | tee ${OUTPUT_LOG_DIR}/accuracy_evaluation.log
+        --dtype int64 2>&1 | tee ${OUTPUT_LOG_DIR}/accuracy_evaluation.log
 
-
-    echo ""
-    echo "=== Accuracy Evaluation Summary ==="
-    if [ -f "${OUTPUT_LOG_DIR}/accuracy_evaluation.log" ]; then
-        tail -20 "${OUTPUT_LOG_DIR}/accuracy_evaluation.log"
-    fi
 else
     echo "Warning: mlperf_log_accuracy.json not found in ${OUTPUT_LOG_DIR}/"
     echo "Accuracy evaluation skipped."

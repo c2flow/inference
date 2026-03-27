@@ -134,15 +134,26 @@ class Dataset:
             aux_seq.append(aux)
         output_seq = aux_seq
 
-        # Save outputs
+        # Save outputs - each query separately to avoid long filenames
         if not os.path.exists("run_outputs"):
             os.makedirs("run_outputs")
-        fname = "q" + "_".join([str(i) for i in query_id_list])
-        fname = f"run_outputs/{fname}.pkl"
-        with open(fname, mode="wb") as f:
-            d = {"query_ids": query_id_list, "outputs": output_seq}
-            print(f"Saving outputs to {fname}")
-            pickle.dump(d, f)
+
+        # Save each query output separately
+        for i, query_id in enumerate(query_id_list):
+            fname = f"run_outputs/q{query_id}.pkl"
+            with open(fname, mode="wb") as f:
+                d = {
+                    "query_id": query_id,
+                    "output": output_seq[i],
+                    "dataset": dataset_list[i] if dataset_list else None
+                }
+                pickle.dump(d, f)
+
+        # Log summary instead of each file
+        if len(query_id_list) > 1:
+            print(f"Saved {len(query_id_list)} query outputs to run_outputs/ directory")
+        else:
+            print(f"Saved query {query_id_list[0]} output to run_outputs/q{query_id_list[0]}.pkl")
 
         return output_seq
 

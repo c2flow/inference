@@ -108,72 +108,88 @@ class SUT:
 
             query_ids = [q.index for q in qitem]
 
-            fname = "q" + "_".join([str(i) for i in query_ids])
-            fname = f"run_outputs/{fname}.pkl"
-            _p = Path(fname)
-            if self.use_cached_outputs and _p.exists():
-                # Read cache
-                with _p.open(mode="rb") as f:
-                    d = pickle.load(f)
-                processed_output = d["outputs"]
-                tik1 = None
-                tik2 = None
-                tik3 = None
-                tok = None
+            # Check cache for each query individually
+            cached_indices = []
+            need_compute_indices = []
+            cached_outputs = []
+
+            if self.use_cached_outputs:
+                # Check each query for cache
+                for i, q in enumerate(qitem):
+                    fname = f"run_outputs/q{q.index}.pkl"
+                    if os.path.exists(fname):
+                        # Read cache for this query
+                        with open(fname, "rb") as f:
+                            cached = pickle.load(f)
+                        cached_indices.append(i)
+                        cached_outputs.append(cached["output"])
+                    else:
+                        need_compute_indices.append(i)
             else:
+                # Not using cache, need to compute all
+                need_compute_indices = list(range(len(qitem)))
+
+            # Initialize processed_output array
+            processed_output = [None] * len(qitem)
+
+            # Fill in cached results
+            for idx, output in zip(cached_indices, cached_outputs):
+                processed_output[idx] = output
+
+            # Compute results for queries without cache
+            tik1 = tik2 = tik3 = tok = None
+            if need_compute_indices:
                 tik1 = time.time()
 
+                # Get subset of queries that need computation
+                need_compute_qitems = [qitem[i] for i in need_compute_indices]
+
                 # Get dataset names for postProcess
-                input_dataset = [self.data_object.dataset_names[q.index] for q in qitem]
+                input_dataset = [self.data_object.dataset_names[q.index] for q in need_compute_qitems]
                 # Get input lengths for postProcess
-                input_lens = [self.data_object.input_lens[q.index] for q in qitem]
+                input_lens = [self.data_object.input_lens[q.index] for q in need_compute_qitems]
 
                 tik2 = time.time()
 
-            # Original SUT.py uses tokenizer.batch_encode_plus to get input_ids
-            # But vllm expects prompts (strings) or TokensPrompt objects
-            # Since token IDs approaches fail in vllm 0.12.0, we use strings
+                # Get original text inputs from dataset
+                batch_texts = [self.data_object.input_texts[q.index] for q in need_compute_qitems]
 
-            # Get original text inputs from dataset (like original SUT.py does)
-            batch_texts = [self.data_object.input_texts[q.index] for q in qitem]
+                # Use text prompts for vllm
+                outputs = self.model.generate(
+                    prompts=batch_texts, sampling_params=self.sampling_params
+                )
+                pred_output_tokens = []
+                for output in outputs:
+                    pred_output_tokens.append(list(output.outputs[0].token_ids))
+                tik3 = time.time()
 
-            # Use text prompts for vllm (most reliable approach)
-            outputs = self.model.generate(
-                prompts=batch_texts, sampling_params=self.sampling_params
-            )
-            pred_output_tokens = []
-            for output in outputs:
-                pred_output_tokens.append(list(output.outputs[0].token_ids))
-                # log.info(f"Output: {output.outputs[0].text}")
-            tik3 = time.time()
+                # Convert to tensor for postProcess compatibility
+                max_len = max(len(tokens) for tokens in pred_output_tokens)
+                padded_tokens = []
+                for tokens in pred_output_tokens:
+                    if len(tokens) < max_len:
+                        padded = tokens + [0] * (max_len - len(tokens))
+                    else:
+                        padded = tokens
+                    padded_tokens.append(padded)
 
-            # Convert to tensor for postProcess compatibility
-            # Note: postProcess expects tensor with shape [batch_size, seq_len]
-            max_len = max(len(tokens) for tokens in pred_output_tokens)
-            padded_tokens = []
-            for tokens in pred_output_tokens:
-                if len(tokens) < max_len:
-                    padded = tokens + [0] * (max_len - len(tokens))
-                else:
-                    padded = tokens
-                padded_tokens.append(padded)
+                out_tokens_tensor = torch.tensor(padded_tokens, dtype=torch.int64)
 
-            out_tokens_tensor = torch.tensor(padded_tokens, dtype=torch.int64)
+                # Call postProcess for computed queries
+                computed_output = self.data_object.postProcess(
+                    out_tokens_tensor,
+                    length=input_lens[0] if len(input_lens) == 1 else None,
+                    query_id_list=[q.index for q in need_compute_qitems],
+                    dataset_list=input_dataset,
+                )
 
-            # Call postProcess with required parameters for mixtral
-            processed_output = self.data_object.postProcess(
-                out_tokens_tensor,
-                length=input_lens[0] if len(input_lens) == 1 else None,  # Handle batch case
-                query_id_list=query_ids,
-                dataset_list=input_dataset,
-            )
+                # Store computed results
+                for idx, output in zip(need_compute_indices, computed_output):
+                    processed_output[idx] = output
 
-            # Save to cache if not using cached outputs
-            if not self.use_cached_outputs:
-                os.makedirs("run_outputs", exist_ok=True)
-                with _p.open(mode="wb") as f:
-                    pickle.dump({"outputs": processed_output}, f)
+                tok = time.time()
 
+            # Send responses to LoadGen
             for i in range(len(qitem)):
                 n_tokens = processed_output[i].shape[0]
                 response_array = array.array(
@@ -187,18 +203,23 @@ class SUT:
                         n_tokens)]
                 lg.QuerySamplesComplete(response)
 
-            tok = time.time()
-
+            # Update counter and log (thread-safe)
             with self.sample_counter_lock:
                 self.sample_counter += len(qitem)
                 log.info(f"Samples run: {self.sample_counter}")
+
+                # Log cache/compute summary
+                if cached_indices and need_compute_indices:
+                    log.info(f"  (Loaded {len(cached_indices)} from cache, computed {len(need_compute_indices)})")
+                elif cached_indices:
+                    log.info(f"  (All {len(cached_indices)} loaded from cache)")
+
+                # Log timing for computed queries
                 if tik1:
                     log.info(f"\tBatchMaker time: {tik2 - tik1}")
                     log.info(f"\tInference time: {tik3 - tik2}")
                     log.info(f"\tPostprocess time: {tok - tik3}")
                     log.info(f"\t==== Total time: {tok - tik1}")
-                else:
-                    log.info(f"\tLoaded from cache: {_p}")
 
     def load_model(self):
         log.info("Loading model...")

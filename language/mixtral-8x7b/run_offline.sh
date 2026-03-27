@@ -23,14 +23,15 @@ DATASET_PATH="${MLCOMMONS_ALL_PATH}/dataset/09292024_mixtral_15k_mintoken2_v1.pk
 BATCH_SIZE=${1:-1}
 USE_VLLM=${2:-1}  # 0 = transformers, 1 = vllm (default: vllm)
 TENSOR_PARALLEL_SIZE=${3:-8}
+DTYPE="float16"
 
 # Set output directory based on mode
 if [ "$USE_VLLM" = "1" ]; then
     MODE="vllm"
-    OUTPUT_LOG_DIR="output_offline_bs${BATCH_SIZE}_tp${TENSOR_PARALLEL_SIZE}_vllm"
+    OUTPUT_LOG_DIR="output_offline_bs${BATCH_SIZE}_tp${TENSOR_PARALLEL_SIZE}_vllm_${DTYPE}"
 else
     MODE="transformers"
-    OUTPUT_LOG_DIR="output_offline_bs${BATCH_SIZE}_transformers"
+    OUTPUT_LOG_DIR="output_offline_bs${BATCH_SIZE}_transformers_${DTYPE}"
 fi
 
 # Create output log directory
@@ -54,7 +55,7 @@ CMD_ARGS="--scenario Offline \
         --dataset-path ${DATASET_PATH} \
         --output-log-dir ${OUTPUT_LOG_DIR} \
         --batch-size ${BATCH_SIZE} \
-        --dtype float32 \
+        --dtype ${DTYPE} \
         --device cuda:0"
 
 # Add vllm-specific arguments if enabled

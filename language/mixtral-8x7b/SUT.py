@@ -213,19 +213,41 @@ class SUT:
 
             query_ids = [q.index for q in qitem]
 
-            fname = "q" + "_".join([str(i) for i in query_ids])
-            fname = f"run_outputs/{fname}.pkl"
-            _p = Path(fname)
-            if self.use_cached_outputs and _p.exists():
-                # Read cache
-                with _p.open(mode="rb") as f:
-                    d = pickle.load(f)
-                processed_output = d["outputs"]
-                tik1 = None
-                tik2 = None
-                tik3 = None
-                tok = None
+            # Check cache for each query individually
+            cached_indices = []
+            need_compute_indices = []
+            cached_outputs = []
+
+            if self.use_cached_outputs:
+                # Check each query for cache
+                for i, q in enumerate(qitem):
+                    fname = f"run_outputs/q{q.index}.pkl"
+                    if os.path.exists(fname):
+                        # Read cache for this query
+                        with open(fname, "rb") as f:
+                            cached = pickle.load(f)
+                        cached_indices.append(i)
+                        cached_outputs.append(cached["output"])
+                    else:
+                        need_compute_indices.append(i)
             else:
+                # Not using cache, need to compute all
+                need_compute_indices = list(range(len(qitem)))
+
+            # Initialize processed_output array
+            processed_output = [None] * len(qitem)
+
+            # Fill in cached results
+            for idx, output in zip(cached_indices, cached_outputs):
+                processed_output[idx] = output
+
+            # Compute results for queries without cache
+            tik1 = tik2 = tik3 = tok = None
+            if need_compute_indices:
+                # Get subset of queries that need computation
+                need_compute_qitems = [qitem[i] for i in need_compute_indices]
+                need_compute_query_ids = [q.index for q in need_compute_qitems]
+
                 # Construct / collate batch
                 max_seq_len = 1024
 
@@ -237,7 +259,7 @@ class SUT:
                 input_dataset = []
                 batch_texts = []
                 datasets = []
-                for q in qitem:
+                for q in need_compute_qitems:
                     batch_texts.append(self.data_object.input_texts[q.index])
                     input_len.append(self.data_object.input_lens[q.index])
                     # In case we predict code generation, we can specify an
@@ -256,12 +278,18 @@ class SUT:
                 pred_output_tokens = out
                 tik3 = time.time()
 
-                processed_output = self.data_object.postProcess(
+                computed_output = self.data_object.postProcess(
                     pred_output_tokens,
                     length=length,
-                    query_id_list=query_ids,
+                    query_id_list=need_compute_query_ids,
                     dataset_list=input_dataset,
                 )
+
+                # Store computed results
+                for idx, output in zip(need_compute_indices, computed_output):
+                    processed_output[idx] = output
+
+                tok = time.time()
 
             for i in range(len(qitem)):
                 n_tokens = processed_output[i].shape[0]
@@ -276,18 +304,23 @@ class SUT:
                         n_tokens)]
                 lg.QuerySamplesComplete(response)
 
-            tok = time.time()
-
+            # Update counter and log (thread-safe)
             with self.sample_counter_lock:
                 self.sample_counter += len(qitem)
                 print(f"Samples run: {self.sample_counter}")
+
+                # Log cache/compute summary
+                if cached_indices and need_compute_indices:
+                    print(f"  (Loaded {len(cached_indices)} from cache, computed {len(need_compute_indices)})")
+                elif cached_indices:
+                    print(f"  (All {len(cached_indices)} loaded from cache)")
+
+                # Log timing for computed queries
                 if tik1:
                     print(f"\tBatchMaker time: {tik2 - tik1}")
                     print(f"\tInference time: {tik3 - tik2}")
                     print(f"\tPostprocess time: {tok - tik3}")
                     print(f"\t==== Total time: {tok - tik1}")
-                else:
-                    print(f"\tLoaded from cache: {_p}")
 
     def load_model(self):
         self.model = AutoModelForCausalLM.from_pretrained(
