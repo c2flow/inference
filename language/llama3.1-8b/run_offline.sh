@@ -7,9 +7,46 @@ MLCOMMONS_ALL_PATH="$(dirname "$(dirname "$(dirname "$PWD")")")"
 export NLTK_DATA="${MLCOMMONS_ALL_PATH}/nltk_data"
 export HF_HOME="${MLCOMMONS_ALL_PATH}/huggingface"
 
+# Parse arguments
+DEVICE="cuda"
+FP8_MODE=false
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --device)
+            if [[ -z "${2:-}" ]]; then
+                echo "Error: --device requires a value" >&2
+                exit 1
+            fi
+            DEVICE="$2"; shift 2 ;;
+        --fp8)
+            FP8_MODE=true; shift ;;
+        *)
+            echo "Warning: Unknown option $1" >&2; shift ;;
+    esac
+done
+
+# Device-specific defaults
+DTYPE="auto"
+BLOCK_SIZE=""
+case "$DEVICE" in
+    gcu)
+        export TORCH_ECCL_AVOID_RECORD_STREAMS=true
+        export VLLM_USE_V1=0
+        export VLLM_ATTENTION_BACKEND=XFORMERS
+        DTYPE="float16"
+        BLOCK_SIZE="64"
+        ;;
+esac
+
 # Set CHECKPOINT_PATH, DATASET_PATH
-CHECKPOINT_PATH="${MLCOMMONS_ALL_PATH}/model/Meta-Llama-3.1-8B-Instruct"
 DATASET_PATH="${MLCOMMONS_ALL_PATH}/dataset/cnn_eval.json"
+if $FP8_MODE; then
+    CHECKPOINT_PATH="${MLCOMMONS_ALL_PATH}/model/Meta-Llama-3.1-8B-Instruct-FP8"
+    LOG_PREFIX="fp8_"
+else
+    CHECKPOINT_PATH="${MLCOMMONS_ALL_PATH}/model/Meta-Llama-3.1-8B-Instruct"
+    LOG_PREFIX=""
+fi
 
 # Log file for overall execution
 EXECUTION_LOG="execution_summary.log"
@@ -30,16 +67,26 @@ for gpu_count in "${GPU_COUNTS[@]}"; do
     echo "Running experiment with GPU_COUNT=$gpu_count"
     echo "========================================"
 
-    # Create unique output directory for this experiment
-    EXP_LOG_DIR="${BASE_LOG_DIR}/exp__tp_${gpu_count}_pp_${PIPELINE_PARALLEL_SIZE}_${MAX_MODEL_LEN}_${MAX_NUM_BATCHED_TOKENS}_${GPU_MEMORY_UTILIZATION}"
+    # Build log directory name
+    if [[ -n "$BLOCK_SIZE" ]]; then
+        EXP_LOG_DIR="${BASE_LOG_DIR}/exp__${LOG_PREFIX}tp_${gpu_count}_pp_${PIPELINE_PARALLEL_SIZE}_${BLOCK_SIZE}_${MAX_MODEL_LEN}_${MAX_NUM_BATCHED_TOKENS}_${GPU_MEMORY_UTILIZATION}"
+    else
+        EXP_LOG_DIR="${BASE_LOG_DIR}/exp__${LOG_PREFIX}tp_${gpu_count}_pp_${PIPELINE_PARALLEL_SIZE}_${MAX_MODEL_LEN}_${MAX_NUM_BATCHED_TOKENS}_${GPU_MEMORY_UTILIZATION}"
+    fi
     mkdir -p "${EXP_LOG_DIR}"
+
+    # Build extra args
+    EXTRA_ARGS=""
+    if [[ -n "$BLOCK_SIZE" ]]; then
+        EXTRA_ARGS="--block-size ${BLOCK_SIZE}"
+    fi
 
     # Run the experiment with error handling
     {
         python3 -u main.py --scenario Offline \
             --model-path "${CHECKPOINT_PATH}" \
             --batch-size 13368 \
-            --dtype auto \
+            --dtype "${DTYPE}" \
             --user-conf user.conf \
             --total-sample-count 13368 \
             --dataset-path "${DATASET_PATH}" \
@@ -50,6 +97,7 @@ for gpu_count in "${GPU_COUNTS[@]}"; do
             --enable-chunked-prefill \
             --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS}" \
             --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION}" \
+            ${EXTRA_ARGS} \
             --vllm 2>&1 | tee "${EXP_LOG_DIR}/offline.log"
 
         # Check if the experiment succeeded
@@ -59,6 +107,7 @@ for gpu_count in "${GPU_COUNTS[@]}"; do
             echo "Experiment with GPU_COUNT=$gpu_count FAILED" | tee -a "$EXECUTION_LOG"
         fi
     }
+
     # Sleep for a short time to ensure proper cleanup between runs
     sleep 120
 done
