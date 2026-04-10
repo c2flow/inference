@@ -37,7 +37,9 @@ class SUT:
         # Set this to True *only for test accuracy runs* in case your prior
         # session was killed partway through
         workers=1,
-        tensor_parallel_size=8
+        tensor_parallel_size=8,
+        block_size=None,
+        gpu_memory_utilization=0.9,
     ):
 
         self.model_path = model_path or "mistralai/Mixtral-8x7B-Instruct-v0.1"
@@ -48,6 +50,8 @@ class SUT:
 
         self.dtype = dtype
         self.tensor_parallel_size = tensor_parallel_size
+        self.block_size = block_size
+        self.gpu_memory_utilization = gpu_memory_utilization
 
         self.dataset_path = dataset_path
         self.data_object = Dataset(
@@ -228,7 +232,8 @@ class SUT:
             dtype=self.dtype,
             tensor_parallel_size=self.tensor_parallel_size,
             distributed_executor_backend='mp',
-            gpu_memory_utilization=0.9,
+            gpu_memory_utilization=self.gpu_memory_utilization,
+            block_size=self.block_size,
         )
         log.info("Loaded model")
 

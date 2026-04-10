@@ -1,10 +1,9 @@
 #!/bin/bash
-# Unified offline test script for Mixtral-8x7B
-# Default: vllm mode with batch_size=1, tensor_parallel_size=8
-# Usage: ./run_offline.sh [BATCH_SIZE] [USE_VLLM] [TENSOR_PARALLEL_SIZE]
-#   BATCH_SIZE: batch size (default: 1)
-#   USE_VLLM: 0 for transformers, 1 for vllm (default: 1)
-#   TENSOR_PARALLEL_SIZE: tensor parallel size for vllm (default: 8)
+# Unified offline test script for Mixtral-8x7B (vllm mode)
+# Usage: ./run_offline.sh [options]
+#   --device, -d DEVICE           Device to use (default: cuda)
+#   --fp8                         Use FP8 quantized model
+#   --tensor-parallel-size, -tp N Tensor parallel size (default: 8)
 
 # Set VLLM_WORKER_MULTIPROC_METHOD to spawn to avoid CUDA error
 export VLLM_WORKER_MULTIPROC_METHOD="spawn"
@@ -20,29 +19,53 @@ CHECKPOINT_PATH="${MLCOMMONS_ALL_PATH}/model/Mixtral-8x7B-Instruct-v0.1"
 DATASET_PATH="${MLCOMMONS_ALL_PATH}/dataset/09292024_mixtral_15k_mintoken2_v1.pkl"
 
 # Parse arguments
-BATCH_SIZE=${1:-1}
-USE_VLLM=${2:-1}  # 0 = transformers, 1 = vllm (default: vllm)
-TENSOR_PARALLEL_SIZE=${3:-8}
-DTYPE="float16"
+DEVICE="cuda"
+FP8_MODE=false
+TENSOR_PARALLEL_SIZE=8
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --device|-d)
+            if [[ -z "${2:-}" ]]; then
+                echo "Error: --device requires a value" >&2
+                exit 1
+            fi
+            DEVICE="$2"; shift 2 ;;
+        --fp8)
+            FP8_MODE=true; shift ;;
+        --tensor-parallel-size|-tp)
+            if [[ -z "${2:-}" ]]; then
+                echo "Error: --tensor-parallel-size requires a value" >&2
+                exit 1
+            fi
+            TENSOR_PARALLEL_SIZE="$2"; shift 2 ;;
+        *)
+            echo "Warning: Unknown option $1" >&2; shift ;;
+    esac
+done
 
-# Set output directory based on mode
-if [ "$USE_VLLM" = "1" ]; then
-    MODE="vllm"
-    OUTPUT_LOG_DIR="output_offline_bs${BATCH_SIZE}_tp${TENSOR_PARALLEL_SIZE}_vllm_${DTYPE}"
-else
-    MODE="transformers"
-    OUTPUT_LOG_DIR="output_offline_bs${BATCH_SIZE}_transformers_${DTYPE}"
-fi
+# Device-specific defaults
+DTYPE="float16"
+BLOCK_SIZE=""
+GPU_MEMORY_UTILIZATION=0.9
+case "$DEVICE" in
+    gcu)
+        export TORCH_ECCL_AVOID_RECORD_STREAMS=true
+        export VLLM_USE_V1=0
+        export VLLM_ATTENTION_BACKEND=XFORMERS
+        BLOCK_SIZE="64"
+        GPU_MEMORY_UTILIZATION=0.5
+        ;;
+esac
+
+# Set output directory
+OUTPUT_LOG_DIR="output_offline_tp${TENSOR_PARALLEL_SIZE}_${DTYPE}_gpu${GPU_MEMORY_UTILIZATION}"
 
 # Create output log directory
 mkdir -p ${OUTPUT_LOG_DIR}
 
 echo "=== Mixtral-8x7B Offline Test ==="
-echo "Mode: ${MODE}"
-echo "Batch size: ${BATCH_SIZE}"
-if [ "$USE_VLLM" = "1" ]; then
-    echo "Tensor parallel size: ${TENSOR_PARALLEL_SIZE}"
-fi
+echo "Batch size: 15000"
+echo "Tensor parallel size: ${TENSOR_PARALLEL_SIZE}"
 echo "Dataset: $(basename ${DATASET_PATH})"
 echo "Output directory: ${OUTPUT_LOG_DIR}"
 echo ""
@@ -54,20 +77,20 @@ CMD_ARGS="--scenario Offline \
         --total-sample-count 15000 \
         --dataset-path ${DATASET_PATH} \
         --output-log-dir ${OUTPUT_LOG_DIR} \
-        --batch-size ${BATCH_SIZE} \
+        --batch-size 15000 \
         --dtype ${DTYPE} \
-        --device cuda:0"
+        --vllm --tensor-parallel-size ${TENSOR_PARALLEL_SIZE} --num-workers 1 --gpu-memory-utilization ${GPU_MEMORY_UTILIZATION}"
 
-# Add vllm-specific arguments if enabled
-if [ "$USE_VLLM" = "1" ]; then
-    CMD_ARGS="${CMD_ARGS} --vllm --tensor-parallel-size ${TENSOR_PARALLEL_SIZE} --num-workers 1"
+# Add block-size if specified
+if [[ -n "$BLOCK_SIZE" ]]; then
+    CMD_ARGS="${CMD_ARGS} --block-size ${BLOCK_SIZE}"
 fi
 
 # Run the benchmark
 echo "Starting benchmark..."
-python3 -u main.py ${CMD_ARGS} 2>&1 | tee ${OUTPUT_LOG_DIR}/offline_performance_${MODE}.log
+python3 -u main.py ${CMD_ARGS} 2>&1 | tee ${OUTPUT_LOG_DIR}/offline_performance.log
 
 echo ""
 echo "=== Test Completed ==="
 echo "Results saved to: ${OUTPUT_LOG_DIR}/"
-echo "Log file: ${OUTPUT_LOG_DIR}/offline_performance_${MODE}.log"
+echo "Log file: ${OUTPUT_LOG_DIR}/offline_performance.log"

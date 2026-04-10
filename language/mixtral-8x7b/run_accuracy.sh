@@ -1,11 +1,10 @@
 #!/bin/bash
-# Unified accuracy test script for Mixtral-8x7B
-# Supports both transformers and vllm modes with cache support
-# Usage: ./run_accuracy.sh [BATCH_SIZE] [USE_VLLM] [TENSOR_PARALLEL_SIZE] [USE_CACHE]
-#   BATCH_SIZE: batch size (default: 1)
-#   USE_VLLM: 0 for transformers, 1 for vllm (default: 1)
-#   TENSOR_PARALLEL_SIZE: tensor parallel size for vllm (default: 8)
-#   USE_CACHE: 0 for fresh run, 1 for use cached outputs (default: 0)
+# Unified accuracy test script for Mixtral-8x7B (vllm mode)
+# Usage: ./run_accuracy.sh [options]
+#   --device, -d DEVICE           Device to use (default: cuda)
+#   --fp8                         Use FP8 quantized model
+#   --use-cached-outputs          Use cached outputs from previous runs
+#   --tensor-parallel-size, -tp N Tensor parallel size (default: 8)
 
 # Set VLLM_WORKER_MULTIPROC_METHOD to spawn to avoid CUDA error
 export VLLM_WORKER_MULTIPROC_METHOD="spawn"
@@ -20,6 +19,48 @@ export HF_HOME="${MLCOMMONS_ALL_PATH}/huggingface"
 CHECKPOINT_PATH="${MLCOMMONS_ALL_PATH}/model/Mixtral-8x7B-Instruct-v0.1"
 DATASET_PATH="${MLCOMMONS_ALL_PATH}/dataset/09292024_mixtral_15k_mintoken2_v1.pkl"
 
+# Parse arguments
+DEVICE="cuda"
+FP8_MODE=false
+USE_CACHE=false
+TENSOR_PARALLEL_SIZE=8
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --device|-d)
+            if [[ -z "${2:-}" ]]; then
+                echo "Error: --device requires a value" >&2
+                exit 1
+            fi
+            DEVICE="$2"; shift 2 ;;
+        --fp8)
+            FP8_MODE=true; shift ;;
+        --use-cached-outputs)
+            USE_CACHE=true; shift ;;
+        --tensor-parallel-size|-tp)
+            if [[ -z "${2:-}" ]]; then
+                echo "Error: --tensor-parallel-size requires a value" >&2
+                exit 1
+            fi
+            TENSOR_PARALLEL_SIZE="$2"; shift 2 ;;
+        *)
+            echo "Warning: Unknown option $1" >&2; shift ;;
+    esac
+done
+
+# Device-specific defaults
+DTYPE="float16"
+BLOCK_SIZE=""
+GPU_MEMORY_UTILIZATION=0.9
+case "$DEVICE" in
+    gcu)
+        export TORCH_ECCL_AVOID_RECORD_STREAMS=true
+        export VLLM_USE_V1=0
+        export VLLM_ATTENTION_BACKEND=XFORMERS
+        BLOCK_SIZE="64"
+        GPU_MEMORY_UTILIZATION=0.5
+        ;;
+esac
+
 # Verify paths exist
 if [ ! -d "${CHECKPOINT_PATH}" ]; then
     echo "Error: CHECKPOINT_PATH does not exist: ${CHECKPOINT_PATH}"
@@ -33,24 +74,11 @@ if [ ! -f "${DATASET_PATH}" ]; then
     exit 1
 fi
 
-# Parse arguments
-BATCH_SIZE=${1:-1}
-USE_VLLM=${2:-1}  # 0 = transformers, 1 = vllm (default: vllm)
-TENSOR_PARALLEL_SIZE=${3:-8}
-USE_CACHE=${4:-0}  # 0 = fresh run, 1 = use cached outputs
-DTYPE="float16"
-
-# Set output directory based on mode
-if [ "$USE_VLLM" = "1" ]; then
-    MODE="vllm"
-    OUTPUT_LOG_DIR="output_accuracy_bs${BATCH_SIZE}_tp${TENSOR_PARALLEL_SIZE}_vllm_${DTYPE}"
-else
-    MODE="transformers"
-    OUTPUT_LOG_DIR="output_accuracy_bs${BATCH_SIZE}_transformers_${DTYPE}"
-fi
+# Set output directory
+OUTPUT_LOG_DIR="output_accuracy_tp${TENSOR_PARALLEL_SIZE}_${DTYPE}_gpu${GPU_MEMORY_UTILIZATION}"
 
 # Add cache indicator to output directory if using cache
-if [ "$USE_CACHE" = "1" ]; then
+if $USE_CACHE; then
     OUTPUT_LOG_DIR="${OUTPUT_LOG_DIR}_cached"
 fi
 
@@ -59,12 +87,9 @@ mkdir -p ${OUTPUT_LOG_DIR}
 mkdir -p "run_outputs"  # For cache files
 
 echo "=== Mixtral-8x7B Accuracy Test ==="
-echo "Mode: ${MODE}"
-echo "Batch size: ${BATCH_SIZE}"
-if [ "$USE_VLLM" = "1" ]; then
-    echo "Tensor parallel size: ${TENSOR_PARALLEL_SIZE}"
-fi
-if [ "$USE_CACHE" = "1" ]; then
+echo "Batch size: 15000"
+echo "Tensor parallel size: ${TENSOR_PARALLEL_SIZE}"
+if $USE_CACHE; then
     echo "Cache mode: Using cached outputs from run_outputs/"
 else
     echo "Cache mode: Fresh run (will generate cache)"
@@ -81,17 +106,17 @@ CMD_ARGS="--scenario Offline \
         --total-sample-count 15000 \
         --dataset-path ${DATASET_PATH} \
         --output-log-dir ${OUTPUT_LOG_DIR} \
-        --batch-size ${BATCH_SIZE} \
+        --batch-size 15000 \
         --dtype ${DTYPE} \
-        --device cuda:0"
+        --vllm --tensor-parallel-size ${TENSOR_PARALLEL_SIZE} --num-workers 1 --gpu-memory-utilization ${GPU_MEMORY_UTILIZATION}"
 
-# Add vllm-specific arguments if enabled
-if [ "$USE_VLLM" = "1" ]; then
-    CMD_ARGS="${CMD_ARGS} --vllm --tensor-parallel-size ${TENSOR_PARALLEL_SIZE} --num-workers 1"
+# Add block-size if specified
+if [[ -n "$BLOCK_SIZE" ]]; then
+    CMD_ARGS="${CMD_ARGS} --block-size ${BLOCK_SIZE}"
 fi
 
 # Add cache argument if enabled
-if [ "$USE_CACHE" = "1" ]; then
+if $USE_CACHE; then
     CMD_ARGS="${CMD_ARGS} --use-cached-outputs"
 fi
 
@@ -100,19 +125,18 @@ echo "Starting accuracy benchmark..."
 echo "Command: python3 -u main.py ${CMD_ARGS}"
 echo ""
 
-python3 -u main.py ${CMD_ARGS} 2>&1 | tee ${OUTPUT_LOG_DIR}/accuracy_${MODE}.log
+python3 -u main.py ${CMD_ARGS} 2>&1 | tee ${OUTPUT_LOG_DIR}/accuracy.log
 
 echo ""
 echo "=== Accuracy Benchmark Completed ==="
 echo "Results saved to: ${OUTPUT_LOG_DIR}/"
-echo "Log file: ${OUTPUT_LOG_DIR}/accuracy_${MODE}.log"
+echo "Log file: ${OUTPUT_LOG_DIR}/accuracy.log"
 echo ""
 
 # Evaluate accuracy if mlperf_log_accuracy.json exists
 ACCURACY_LOG_FILE="${OUTPUT_LOG_DIR}/mlperf_log_accuracy.json"
 if [ -e "${ACCURACY_LOG_FILE}" ]; then
     echo "=== Evaluating Accuracy Results ==="
-
 
     python3 evaluate-accuracy.py \
         --checkpoint-path ${CHECKPOINT_PATH} \
@@ -128,8 +152,3 @@ fi
 echo ""
 echo "=== Test Completed ==="
 echo "All results saved to: ${OUTPUT_LOG_DIR}/"
-echo ""
-echo "Next steps:"
-echo "1. Check accuracy scores in ${OUTPUT_LOG_DIR}/accuracy_evaluation.log"
-echo "2. For subsequent runs with cache: ./run_accuracy.sh ${BATCH_SIZE} ${USE_VLLM} ${TENSOR_PARALLEL_SIZE} 1"
-echo "3. Compare with reference scores in README.md"

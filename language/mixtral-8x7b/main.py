@@ -46,7 +46,7 @@ def get_args():
         "--device",
         type=str,
         choices=["cpu", "cuda:0"],
-        default="cpu",
+        default="cuda:0",
         help="device to use",
     )
     parser.add_argument(
@@ -96,6 +96,18 @@ def get_args():
         help="Tensor parallel size for vllm",
     )
     parser.add_argument("--vllm", action="store_true", help="vllm mode")
+    parser.add_argument(
+        "--block-size",
+        type=int,
+        default=None,
+        help="Block size for KV cache (default: None, use vllm default)",
+    )
+    parser.add_argument(
+        "--gpu-memory-utilization",
+        type=float,
+        default=0.9,
+        help="GPU memory utilization for vllm (default: 0.9)",
+    )
     parser.add_argument(
         "--use-cached-outputs",
         action="store_true",
@@ -150,7 +162,9 @@ def main():
             total_sample_count=args.total_sample_count,
             use_cached_outputs=args.use_cached_outputs,
             workers=args.num_workers,
-            tensor_parallel_size=args.tensor_parallel_size
+            tensor_parallel_size=args.tensor_parallel_size,
+            block_size=args.block_size,
+            gpu_memory_utilization=args.gpu_memory_utilization,
         )
     else:
         sut = sut_cls(
