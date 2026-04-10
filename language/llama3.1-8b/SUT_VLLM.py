@@ -227,27 +227,61 @@ class SUTServer(SUT):
         dataset_path=None,
         batch_size=None,
         workers=1,
-        tensor_parallel_size=8
+        tensor_parallel_size=8,
+        pipeline_parallel_size=1,
+        max_model_len=None,
+        enable_chunked_prefill=False,
+        block_size=None,
+        max_seq_len_to_capture=None,
+        gpu_memory_utilization=0.9,
+        max_num_batched_tokens=None,
+        max_num_seqs=1024,
     ):
 
         super().__init__(
             model_path=model_path,
             dtype=dtype,
+            batch_size=batch_size,
             total_sample_count=total_sample_count,
             dataset_path=dataset_path,
             workers=workers,
             tensor_parallel_size=tensor_parallel_size,
+            pipeline_parallel_size=pipeline_parallel_size,
+            max_model_len=max_model_len,
+            enable_chunked_prefill=enable_chunked_prefill,
+            block_size=block_size,
+            max_seq_len_to_capture=max_seq_len_to_capture,
+            gpu_memory_utilization=gpu_memory_utilization,
+            max_num_batched_tokens=max_num_batched_tokens,
+            max_num_seqs=max_num_seqs,
         )
         self.request_id = 0
+        self.request_id_lock = threading.Lock()
 
         self.first_token_queue = queue.Queue()
 
+        # Shared asyncio event loop for AsyncLLMEngine
+        self.event_loop = None
+        self.event_loop_thread = None
+        self.pending_futures = []
+        self.pending_futures_lock = threading.Lock()
+
     def start(self):
+        # Start shared event loop in a dedicated thread
+        self.event_loop = asyncio.new_event_loop()
+        self.event_loop_thread = threading.Thread(
+            target=self._run_event_loop, daemon=True)
+        self.event_loop_thread.start()
+
         # Create worker threads
         for j in range(self.num_workers):
             worker = threading.Thread(target=self.process_queries)
             worker.start()
             self.worker_threads[j] = worker
+
+    def _run_event_loop(self):
+        asyncio.set_event_loop(self.event_loop)
+        self.event_loop.run_forever()
 
     async def stream_output(self, qitem, results_generator):
         first = True
@@ -262,7 +296,6 @@ class SUTServer(SUT):
                 lg.FirstTokenComplete(response)
                 first = False
 
-        outputs = output_response
         pred_output_tokens = list(output_response.outputs[0].token_ids)
         n_tokens = len(pred_output_tokens)
         response_array = array.array(
@@ -278,9 +311,8 @@ class SUTServer(SUT):
         lg.QuerySamplesComplete(response)
 
     def process_queries(self):
-        """Processor of the queued queries. User may choose to add batching logic"""
+        """Processor of the queued queries. Fire-and-forget submission to AsyncLLMEngine."""
         while True:
-
             qitem = self.query_queue.get()
             if qitem is None:
                 break
@@ -288,33 +320,71 @@ class SUTServer(SUT):
             input_ids_tensor = TokensPrompt(
                 prompt_token_ids=self.data_object.input_ids[qitem.index])
 
-            # TODO: This PoC is super slow with significant overhead. Best to
-            # create a patch to `generate`
+            with self.request_id_lock:
+                request_id = self.request_id
+                self.request_id += 1
+
             results_generator = self.model.generate(
-                prompt=input_ids_tensor, sampling_params=self.sampling_params, request_id=str(
-                    self.request_id)
+                prompt=input_ids_tensor,
+                sampling_params=self.sampling_params,
+                request_id=str(request_id)
             )
-            self.request_id += 1
-            asyncio.run(self.stream_output(qitem, results_generator))
+
+            # Submit to event loop without blocking
+            future = asyncio.run_coroutine_threadsafe(
+                self.stream_output(qitem, results_generator),
+                self.event_loop
+            )
+            with self.pending_futures_lock:
+                self.pending_futures.append(future)
 
     def issue_queries(self, query_samples):
-        self.query_queue.put(query_samples[0])
+        for sample in query_samples:
+            self.query_queue.put(sample)
 
     def stop(self):
+        # Signal workers to stop
         for _ in range(self.num_workers):
             self.query_queue.put(None)
 
+        # Wait for workers to finish (queue will be drained before they see None)
         for worker in self.worker_threads:
             worker.join()
 
-        self.first_token_queue.put(None)
-        self.ft_response_thread.join()
+        # Wait for all pending async requests to complete
+        with self.pending_futures_lock:
+            futures = list(self.pending_futures)
+        for future in futures:
+            future.result()
+
+        # Cancel all pending tasks and close event loop
+        if self.event_loop is not None and self.event_loop_thread is not None:
+            async def _cancel_all():
+                tasks = [t for t in asyncio.all_tasks(self.event_loop)
+                         if t is not asyncio.current_task(self.event_loop)]
+                for task in tasks:
+                    task.cancel()
+                if tasks:
+                    await asyncio.gather(*tasks, return_exceptions=True)
+            asyncio.run_coroutine_threadsafe(_cancel_all(), self.event_loop).result()
+
+            self.event_loop.call_soon_threadsafe(self.event_loop.stop)
+            self.event_loop_thread.join()
+            self.event_loop.close()
 
     def load_model(self):
         log.info("Loading model")
         self.engine_args = AsyncEngineArgs(
             self.model_path,
             dtype=self.dtype,
-            tensor_parallel_size=self.tensor_parallel_size)
+            tensor_parallel_size=self.tensor_parallel_size,
+            pipeline_parallel_size=self.pipeline_parallel_size,
+            gpu_memory_utilization=self.gpu_memory_utilization,
+            max_model_len=self.max_model_len,
+            enable_chunked_prefill=self.enable_chunked_prefill,
+            block_size=self.block_size,
+            max_num_batched_tokens=self.max_num_batched_tokens,
+            max_num_seqs=self.max_num_seqs,
+        )
         self.model = AsyncLLMEngine.from_engine_args(self.engine_args)
         log.info("Loaded model")

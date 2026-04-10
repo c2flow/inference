@@ -174,6 +174,12 @@ def get_args():
         choices=["llama3_1-8b", "llama3_1-8b-edge"],
         help="Model name(specified in llm server)",
     )
+    parser.add_argument(
+        "--target-qps",
+        type=float,
+        default=None,
+        help="Target QPS for Server scenario. Overrides user.conf if specified.",
+    )
 
     args = parser.parse_args()
     return args
@@ -194,6 +200,9 @@ def main():
     # mlperf.conf is automatically loaded by the loadgen
     # settings.FromConfig(args.mlperf_conf, "llama3_1-8b", args.scenario)
     settings.FromConfig(args.user_conf, args.lg_model_name, args.scenario)
+
+    if args.target_qps is not None:
+        settings.server_target_qps = args.target_qps
 
     if args.accuracy:
         settings.mode = lg.TestMode.AccuracyOnly
