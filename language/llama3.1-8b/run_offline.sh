@@ -10,9 +10,10 @@ export HF_HOME="${MLCOMMONS_ALL_PATH}/huggingface"
 # Parse arguments
 DEVICE="cuda"
 FP8_MODE=false
+EXECUTOR_BACKEND="mp"
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --device)
+        --device|-d)
             if [[ -z "${2:-}" ]]; then
                 echo "Error: --device requires a value" >&2
                 exit 1
@@ -20,6 +21,12 @@ while [[ $# -gt 0 ]]; do
             DEVICE="$2"; shift 2 ;;
         --fp8)
             FP8_MODE=true; shift ;;
+        --executor-backend|-backend)
+            if [[ -z "${2:-}" ]]; then
+                echo "Error: --executor-backend requires a value" >&2
+                exit 1
+            fi
+            EXECUTOR_BACKEND="$2"; shift 2 ;;
         *)
             echo "Warning: Unknown option $1" >&2; shift ;;
     esac
@@ -97,6 +104,7 @@ for gpu_count in "${GPU_COUNTS[@]}"; do
             --enable-chunked-prefill \
             --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS}" \
             --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION}" \
+            --distributed-executor-backend "${EXECUTOR_BACKEND}" \
             ${EXTRA_ARGS} \
             --vllm 2>&1 | tee "${EXP_LOG_DIR}/offline.log"
 

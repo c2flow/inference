@@ -37,8 +37,10 @@ class SUT:
         # Set this to True *only for test accuracy runs* in case your prior
         # session was killed partway through
         workers=1,
-        tensor_parallel_size=8,
+        tensor_parallel_size=1,
         pipeline_parallel_size=1,
+        data_parallel_size=1,
+        distributed_executor_backend="mp",
         max_model_len=None,
         enable_chunked_prefill=False,
         block_size=None,
@@ -57,6 +59,8 @@ class SUT:
         self.dtype = dtype
         self.tensor_parallel_size = tensor_parallel_size
         self.pipeline_parallel_size = pipeline_parallel_size
+        self.data_parallel_size = data_parallel_size
+        self.distributed_executor_backend = distributed_executor_backend
         self.max_model_len = max_model_len
         self.enable_chunked_prefill = enable_chunked_prefill
         self.block_size = block_size
@@ -173,13 +177,18 @@ class SUT:
                     log.info(f"\t==== Total time: {tok - tik1}")
 
     def load_model(self):
+        if self.data_parallel_size != 1:
+            raise NotImplementedError(
+                "Data parallelism is not supported in Offline scenario. "
+                "Use Server scenario for DP support."
+            )
         log.info("Loading model...")
         self.model = LLM(
             self.model_path,
             dtype=self.dtype,
             tensor_parallel_size=self.tensor_parallel_size,
             pipeline_parallel_size=self.pipeline_parallel_size,
-            distributed_executor_backend='mp',
+            distributed_executor_backend=self.distributed_executor_backend,
             gpu_memory_utilization=self.gpu_memory_utilization,
             max_model_len=self.max_model_len,
             enable_chunked_prefill=self.enable_chunked_prefill,
@@ -227,8 +236,10 @@ class SUTServer(SUT):
         dataset_path=None,
         batch_size=None,
         workers=1,
-        tensor_parallel_size=8,
+        tensor_parallel_size=1,
         pipeline_parallel_size=1,
+        data_parallel_size=1,
+        distributed_executor_backend="mp",
         max_model_len=None,
         enable_chunked_prefill=False,
         block_size=None,
@@ -247,6 +258,8 @@ class SUTServer(SUT):
             workers=workers,
             tensor_parallel_size=tensor_parallel_size,
             pipeline_parallel_size=pipeline_parallel_size,
+            data_parallel_size=data_parallel_size,
+            distributed_executor_backend=distributed_executor_backend,
             max_model_len=max_model_len,
             enable_chunked_prefill=enable_chunked_prefill,
             block_size=block_size,
@@ -385,6 +398,8 @@ class SUTServer(SUT):
             block_size=self.block_size,
             max_num_batched_tokens=self.max_num_batched_tokens,
             max_num_seqs=self.max_num_seqs,
+            data_parallel_size=self.data_parallel_size,
+            distributed_executor_backend=self.distributed_executor_backend,
         )
         self.model = AsyncLLMEngine.from_engine_args(self.engine_args)
         log.info("Loaded model")

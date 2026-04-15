@@ -103,14 +103,26 @@ def get_args():
     parser.add_argument(
         "--tensor-parallel-size",
         type=int,
-        default=8,
-        help="Number of workers to process queries",
+        default=1,
+        help="Tensor parallel size (default: 1)",
+    )
+    parser.add_argument(
+        "--data-parallel-size",
+        type=int,
+        default=1,
+        help="Data parallel size for Server scenario (default: 1)",
     )
     parser.add_argument(
         "--pipeline-parallel-size",
         type=int,
         default=1,
         help="Pipeline parallel size for model distribution across GPUs"
+    )
+    parser.add_argument(
+        "--distributed-executor-backend",
+        type=str,
+        default="mp",
+        help="Distributed executor backend: mp, ray, uni (default: mp)",
     )
     parser.add_argument("--vllm", action="store_true", help="vllm mode")
     parser.add_argument(
@@ -227,7 +239,7 @@ def main():
     sut_cls = sut_map[args.scenario.lower()]
 
     if args.vllm:
-        sut = sut_cls(
+        sut_kwargs = dict(
             model_path=args.model_path,
             dtype=args.dtype,
             batch_size=args.batch_size,
@@ -242,8 +254,11 @@ def main():
             max_seq_len_to_capture=args.max_seq_len_to_capture,
             gpu_memory_utilization=args.gpu_memory_utilization,
             max_num_batched_tokens=args.max_num_batched_tokens,
-            max_num_seqs=args.max_num_seqs
+            max_num_seqs=args.max_num_seqs,
+            data_parallel_size=args.data_parallel_size,
+            distributed_executor_backend=args.distributed_executor_backend,
         )
+        sut = sut_cls(**sut_kwargs)
     else:
         sut = sut_cls(
             model_path=args.model_path,

@@ -53,7 +53,6 @@ case "$DEVICE" in
         export VLLM_USE_V1=0
         export VLLM_ATTENTION_BACKEND=XFORMERS
         BLOCK_SIZE="64"
-        GPU_MEMORY_UTILIZATION=0.5
         ;;
 esac
 
