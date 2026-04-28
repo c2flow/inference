@@ -3,6 +3,7 @@
 # Usage: ./run_offline.sh [options]
 #   --device, -d DEVICE           Device to use (default: cuda)
 #   --fp8                         Use FP8 quantized model
+#   --dtype DTYPE                 Data type (default: bfloat16, GCU: float16)
 #   --tensor-parallel-size, -tp N Tensor parallel size (default: 8)
 
 # Set VLLM_WORKER_MULTIPROC_METHOD to spawn to avoid CUDA error
@@ -32,6 +33,12 @@ while [[ $# -gt 0 ]]; do
             DEVICE="$2"; shift 2 ;;
         --fp8)
             FP8_MODE=true; shift ;;
+        --dtype)
+            if [[ -z "${2:-}" ]]; then
+                echo "Error: --dtype requires a value" >&2
+                exit 1
+            fi
+            DTYPE="$2"; shift 2 ;;
         --tensor-parallel-size|-tp)
             if [[ -z "${2:-}" ]]; then
                 echo "Error: --tensor-parallel-size requires a value" >&2
@@ -44,7 +51,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Device-specific defaults
-DTYPE="float16"
+DTYPE="bfloat16"
 BLOCK_SIZE=""
 GPU_MEMORY_UTILIZATION=0.9
 case "$DEVICE" in
@@ -52,6 +59,7 @@ case "$DEVICE" in
         export TORCH_ECCL_AVOID_RECORD_STREAMS=true
         export VLLM_USE_V1=0
         export VLLM_ATTENTION_BACKEND=XFORMERS
+        DTYPE="float16"
         BLOCK_SIZE="64"
         ;;
 esac
