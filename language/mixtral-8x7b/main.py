@@ -113,6 +113,30 @@ def get_args():
         action="store_true",
         help="Use cached outputs from previous accuracy runs"
     )
+    parser.add_argument(
+        "--data-parallel-size",
+        type=int,
+        default=1,
+        help="Data parallel size for Server scenario (default: 1)",
+    )
+    parser.add_argument(
+        "--pipeline-parallel-size",
+        type=int,
+        default=1,
+        help="Pipeline parallel size (default: 1)",
+    )
+    parser.add_argument(
+        "--distributed-executor-backend",
+        type=str,
+        default="mp",
+        help="Distributed executor backend: mp, ray, uni (default: mp)",
+    )
+    parser.add_argument(
+        "--target-qps",
+        type=float,
+        default=None,
+        help="Target QPS for Server scenario. Overrides user.conf if specified.",
+    )
 
     args = parser.parse_args()
     return args
@@ -131,6 +155,9 @@ def main():
     # mlperf_conf is automatically loaded by the loadgen
     # settings.FromConfig(args.mlperf_conf, "mixtral-8x7b", args.scenario)
     settings.FromConfig(args.user_conf, "mixtral-8x7b", args.scenario)
+
+    if args.target_qps is not None:
+        settings.server_target_qps = args.target_qps
 
     if args.accuracy:
         settings.mode = lg.TestMode.AccuracyOnly
@@ -154,7 +181,7 @@ def main():
     sut_cls = sut_map[args.scenario.lower()]
 
     if args.vllm:
-        sut = sut_cls(
+        sut_kwargs = dict(
             model_path=args.model_path,
             dtype=args.dtype,
             batch_size=args.batch_size,
@@ -163,9 +190,13 @@ def main():
             use_cached_outputs=args.use_cached_outputs,
             workers=args.num_workers,
             tensor_parallel_size=args.tensor_parallel_size,
+            pipeline_parallel_size=args.pipeline_parallel_size,
+            data_parallel_size=args.data_parallel_size,
+            distributed_executor_backend=args.distributed_executor_backend,
             block_size=args.block_size,
             gpu_memory_utilization=args.gpu_memory_utilization,
         )
+        sut = sut_cls(**sut_kwargs)
     else:
         sut = sut_cls(
             model_path=args.model_path,

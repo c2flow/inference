@@ -34,10 +34,11 @@ class SUT:
         total_sample_count=24576,
         dataset_path=None,
         use_cached_outputs=False,
-        # Set this to True *only for test accuracy runs* in case your prior
-        # session was killed partway through
         workers=1,
         tensor_parallel_size=8,
+        pipeline_parallel_size=1,
+        data_parallel_size=1,
+        distributed_executor_backend="mp",
         block_size=None,
         gpu_memory_utilization=0.9,
     ):
@@ -50,6 +51,9 @@ class SUT:
 
         self.dtype = dtype
         self.tensor_parallel_size = tensor_parallel_size
+        self.pipeline_parallel_size = pipeline_parallel_size
+        self.data_parallel_size = data_parallel_size
+        self.distributed_executor_backend = distributed_executor_backend
         self.block_size = block_size
         self.gpu_memory_utilization = gpu_memory_utilization
 
@@ -68,18 +72,15 @@ class SUT:
         )
 
         self.load_model()
-        # Note: Mixtral may need different generation parameters
-        # Using similar parameters as original SUT.py gen_kwargs
         gen_kwargs = {
             "temperature": 0.0,
             "top_p": 1,
             "top_k": 1,
             "seed": 42,
-            "max_tokens": 1024,  # Matches max_new_tokens in original
-            "min_tokens": 2,     # Matches min_new_tokens in original
+            "max_tokens": 1024,
+            "min_tokens": 2,
         }
         self.sampling_params = SamplingParams(**gen_kwargs)
-        # self.sampling_params.all_stop_token_ids.add(self.model.get_tokenizer().eos_token_id)
 
         self.num_workers = workers
         self.worker_threads = [None] * self.num_workers
@@ -90,7 +91,6 @@ class SUT:
         self.sample_counter_lock = threading.Lock()
 
     def start(self):
-        # Create worker threads
         for j in range(self.num_workers):
             worker = threading.Thread(target=self.process_queries)
             worker.start()
@@ -118,11 +118,9 @@ class SUT:
             cached_outputs = []
 
             if self.use_cached_outputs:
-                # Check each query for cache
                 for i, q in enumerate(qitem):
                     fname = f"run_outputs/q{q.index}.pkl"
                     if os.path.exists(fname):
-                        # Read cache for this query
                         with open(fname, "rb") as f:
                             cached = pickle.load(f)
                         cached_indices.append(i)
@@ -130,35 +128,26 @@ class SUT:
                     else:
                         need_compute_indices.append(i)
             else:
-                # Not using cache, need to compute all
                 need_compute_indices = list(range(len(qitem)))
 
-            # Initialize processed_output array
             processed_output = [None] * len(qitem)
 
-            # Fill in cached results
             for idx, output in zip(cached_indices, cached_outputs):
                 processed_output[idx] = output
 
-            # Compute results for queries without cache
             tik1 = tik2 = tik3 = tok = None
             if need_compute_indices:
                 tik1 = time.time()
 
-                # Get subset of queries that need computation
                 need_compute_qitems = [qitem[i] for i in need_compute_indices]
 
-                # Get dataset names for postProcess
                 input_dataset = [self.data_object.dataset_names[q.index] for q in need_compute_qitems]
-                # Get input lengths for postProcess
                 input_lens = [self.data_object.input_lens[q.index] for q in need_compute_qitems]
 
                 tik2 = time.time()
 
-                # Get original text inputs from dataset
                 batch_texts = [self.data_object.input_texts[q.index] for q in need_compute_qitems]
 
-                # Use text prompts for vllm
                 outputs = self.model.generate(
                     prompts=batch_texts, sampling_params=self.sampling_params
                 )
@@ -167,7 +156,6 @@ class SUT:
                     pred_output_tokens.append(list(output.outputs[0].token_ids))
                 tik3 = time.time()
 
-                # Convert to tensor for postProcess compatibility
                 max_len = max(len(tokens) for tokens in pred_output_tokens)
                 padded_tokens = []
                 for tokens in pred_output_tokens:
@@ -179,7 +167,6 @@ class SUT:
 
                 out_tokens_tensor = torch.tensor(padded_tokens, dtype=torch.int64)
 
-                # Call postProcess for computed queries
                 computed_output = self.data_object.postProcess(
                     out_tokens_tensor,
                     length=input_lens[0] if len(input_lens) == 1 else None,
@@ -187,13 +174,11 @@ class SUT:
                     dataset_list=input_dataset,
                 )
 
-                # Store computed results
                 for idx, output in zip(need_compute_indices, computed_output):
                     processed_output[idx] = output
 
                 tok = time.time()
 
-            # Send responses to LoadGen
             for i in range(len(qitem)):
                 n_tokens = processed_output[i].shape[0]
                 response_array = array.array(
@@ -207,18 +192,15 @@ class SUT:
                         n_tokens)]
                 lg.QuerySamplesComplete(response)
 
-            # Update counter and log (thread-safe)
             with self.sample_counter_lock:
                 self.sample_counter += len(qitem)
                 log.info(f"Samples run: {self.sample_counter}")
 
-                # Log cache/compute summary
                 if cached_indices and need_compute_indices:
                     log.info(f"  (Loaded {len(cached_indices)} from cache, computed {len(need_compute_indices)})")
                 elif cached_indices:
                     log.info(f"  (All {len(cached_indices)} loaded from cache)")
 
-                # Log timing for computed queries
                 if tik1:
                     log.info(f"\tBatchMaker time: {tik2 - tik1}")
                     log.info(f"\tInference time: {tik3 - tik2}")
@@ -226,12 +208,18 @@ class SUT:
                     log.info(f"\t==== Total time: {tok - tik1}")
 
     def load_model(self):
+        if self.data_parallel_size != 1:
+            raise NotImplementedError(
+                "Data parallelism is not supported in Offline scenario. "
+                "Use Server scenario for DP support."
+            )
         log.info("Loading model...")
         self.model = LLM(
             self.model_path,
             dtype=self.dtype,
             tensor_parallel_size=self.tensor_parallel_size,
-            distributed_executor_backend='mp',
+            pipeline_parallel_size=self.pipeline_parallel_size,
+            distributed_executor_backend=self.distributed_executor_backend,
             gpu_memory_utilization=self.gpu_memory_utilization,
             block_size=self.block_size,
         )
@@ -249,10 +237,6 @@ class SUT:
 
     def issue_queries(self, query_samples):
         """Receives samples from loadgen and adds them to queue. Users may choose to batch here"""
-
-        list_prompts_tokens = []
-        list_prompts_attn_masks = []
-
         log.info(f"IssueQuery started with {len(query_samples)} samples")
         while len(query_samples) > 0:
             self.query_queue.put(query_samples[: self.batch_size])
@@ -275,99 +259,163 @@ class SUTServer(SUT):
         dataset_path=None,
         batch_size=None,
         workers=1,
-        tensor_parallel_size=8
+        tensor_parallel_size=8,
+        pipeline_parallel_size=1,
+        data_parallel_size=1,
+        distributed_executor_backend="mp",
+        block_size=None,
+        gpu_memory_utilization=0.9,
+        **kwargs,
     ):
 
         super().__init__(
             model_path=model_path,
             dtype=dtype,
+            batch_size=batch_size,
             total_sample_count=total_sample_count,
             dataset_path=dataset_path,
             workers=workers,
             tensor_parallel_size=tensor_parallel_size,
+            pipeline_parallel_size=pipeline_parallel_size,
+            data_parallel_size=data_parallel_size,
+            distributed_executor_backend=distributed_executor_backend,
+            block_size=block_size,
+            gpu_memory_utilization=gpu_memory_utilization,
         )
         self.request_id = 0
+        self.request_id_lock = threading.Lock()
 
         self.first_token_queue = queue.Queue()
 
+        # Shared asyncio event loop for AsyncLLMEngine
+        self.event_loop = None
+        self.event_loop_thread = None
+        self.pending_futures = []
+        self.pending_futures_lock = threading.Lock()
+
     def start(self):
+        # Start shared event loop in a dedicated thread
+        self.event_loop = asyncio.new_event_loop()
+        self.event_loop_thread = threading.Thread(
+            target=self._run_event_loop, daemon=True)
+        self.event_loop_thread.start()
+
         # Create worker threads
         for j in range(self.num_workers):
             worker = threading.Thread(target=self.process_queries)
             worker.start()
             self.worker_threads[j] = worker
 
-    async def stream_output(self, qitem, results_generator):
-        first = True
-        async for request_output in results_generator:
-            output_response = request_output
-            if first:
-                first_tokens = list(output_response.outputs[0].token_ids)
-                response_data = array.array(
-                    "B", np.array(first_tokens, np.int32).tobytes())
-                bi = response_data.buffer_info()
-                response = [lg.QuerySampleResponse(qitem.id, bi[0], bi[1])]
-                lg.FirstTokenComplete(response)
-                first = False
+    def _run_event_loop(self):
+        asyncio.set_event_loop(self.event_loop)
+        self.event_loop.run_forever()
 
-        outputs = output_response
-        pred_output_tokens = list(output_response.outputs[0].token_ids)
-        n_tokens = len(pred_output_tokens)
-        response_array = array.array(
-            "B", np.array(pred_output_tokens, np.int32).tobytes()
-        )
-        bi = response_array.buffer_info()
-        response = [
-            lg.QuerySampleResponse(
-                qitem.id,
-                bi[0],
-                bi[1],
-                n_tokens)]
-        lg.QuerySamplesComplete(response)
+    async def stream_output(self, qitem, results_generator):
+        try:
+            first = True
+            async for request_output in results_generator:
+                output_response = request_output
+                if first:
+                    first_tokens = list(output_response.outputs[0].token_ids)
+                    response_data = array.array(
+                        "B", np.array(first_tokens, np.int32).tobytes())
+                    bi = response_data.buffer_info()
+                    response = [lg.QuerySampleResponse(qitem.id, bi[0], bi[1])]
+                    lg.FirstTokenComplete(response)
+                    first = False
+
+            pred_output_tokens = list(output_response.outputs[0].token_ids)
+            n_tokens = len(pred_output_tokens)
+            response_array = array.array(
+                "B", np.array(pred_output_tokens, np.int32).tobytes()
+            )
+            bi = response_array.buffer_info()
+            response = [
+                lg.QuerySampleResponse(
+                    qitem.id,
+                    bi[0],
+                    bi[1],
+                    n_tokens)]
+            lg.QuerySamplesComplete(response)
+        except Exception:
+            log.exception(f"Error processing query {qitem.index}")
 
     def process_queries(self):
-        """Processor of the queued queries. User may choose to add batching logic"""
+        """Fire-and-forget submission to AsyncLLMEngine."""
         while True:
-
             qitem = self.query_queue.get()
             if qitem is None:
                 break
 
-            # Mixtral dataset stores input_ids as tensors, need to convert
-            input_ids_tensor = self.data_object.input_ids[qitem.index]
-            input_ids_list = input_ids_tensor.cpu().numpy().flatten().tolist()
+            token_ids = self.data_object.input_ids[qitem.index]
+            if isinstance(token_ids, torch.Tensor):
+                token_ids = token_ids.squeeze(0).tolist()
+            input_ids_tensor = TokensPrompt(prompt_token_ids=token_ids)
 
-            input_dataset = [self.data_object.dataset_names[qitem.index]]
-            input_len = self.data_object.input_lens[qitem.index]
+            with self.request_id_lock:
+                request_id = self.request_id
+                self.request_id += 1
 
-            # TODO: This PoC is super slow with significant overhead. Best to
-            # create a patch to `generate`
             results_generator = self.model.generate(
-                prompt=TokensPrompt(prompt_token_ids=input_ids_list),
+                prompt=input_ids_tensor,
                 sampling_params=self.sampling_params,
-                request_id=str(self.request_id)
+                request_id=str(request_id)
             )
-            self.request_id += 1
-            asyncio.run(self.stream_output(qitem, results_generator))
+
+            # Submit to event loop without blocking
+            future = asyncio.run_coroutine_threadsafe(
+                self.stream_output(qitem, results_generator),
+                self.event_loop
+            )
+            with self.pending_futures_lock:
+                self.pending_futures.append(future)
 
     def issue_queries(self, query_samples):
-        self.query_queue.put(query_samples[0])
+        for sample in query_samples:
+            self.query_queue.put(sample)
 
     def stop(self):
+        # Signal workers to stop
         for _ in range(self.num_workers):
             self.query_queue.put(None)
 
+        # Wait for workers to finish
         for worker in self.worker_threads:
             worker.join()
 
-        self.first_token_queue.put(None)
-        self.ft_response_thread.join()
+        # Wait for all pending async requests to complete
+        with self.pending_futures_lock:
+            futures = list(self.pending_futures)
+        for future in futures:
+            future.result()
+
+        # Cancel all pending tasks and close event loop
+        if self.event_loop is not None and self.event_loop_thread is not None:
+            async def _cancel_all():
+                tasks = [t for t in asyncio.all_tasks(self.event_loop)
+                         if t is not asyncio.current_task(self.event_loop)]
+                for task in tasks:
+                    task.cancel()
+                if tasks:
+                    await asyncio.gather(*tasks, return_exceptions=True)
+            asyncio.run_coroutine_threadsafe(
+                _cancel_all(), self.event_loop).result()
+
+            self.event_loop.call_soon_threadsafe(self.event_loop.stop)
+            self.event_loop_thread.join()
+            self.event_loop.close()
 
     def load_model(self):
         log.info("Loading model")
         self.engine_args = AsyncEngineArgs(
             self.model_path,
             dtype=self.dtype,
-            tensor_parallel_size=self.tensor_parallel_size)
+            tensor_parallel_size=self.tensor_parallel_size,
+            pipeline_parallel_size=self.pipeline_parallel_size,
+            gpu_memory_utilization=self.gpu_memory_utilization,
+            block_size=self.block_size,
+            data_parallel_size=self.data_parallel_size,
+            distributed_executor_backend=self.distributed_executor_backend,
+        )
         self.model = AsyncLLMEngine.from_engine_args(self.engine_args)
         log.info("Loaded model")

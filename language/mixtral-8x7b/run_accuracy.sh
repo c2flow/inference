@@ -69,6 +69,12 @@ case "$DEVICE" in
         ;;
 esac
 
+# FP8 overrides
+if $FP8_MODE; then
+    CHECKPOINT_PATH="${MLCOMMONS_ALL_PATH}/model/Mixtral-8x7B-Instruct-v0.1-FP8"
+    DTYPE="auto"
+fi
+
 # Verify paths exist
 if [ ! -d "${CHECKPOINT_PATH}" ]; then
     echo "Error: CHECKPOINT_PATH does not exist: ${CHECKPOINT_PATH}"
@@ -83,7 +89,11 @@ if [ ! -f "${DATASET_PATH}" ]; then
 fi
 
 # Set output directory
-OUTPUT_LOG_DIR="output_accuracy_tp${TENSOR_PARALLEL_SIZE}_${DTYPE}_gpu${GPU_MEMORY_UTILIZATION}"
+FP8_PREFIX=""
+if $FP8_MODE; then
+    FP8_PREFIX="fp8_"
+fi
+OUTPUT_LOG_DIR="output_accuracy/${FP8_PREFIX}tp${TENSOR_PARALLEL_SIZE}_${DTYPE}_gpu${GPU_MEMORY_UTILIZATION}"
 
 # Add cache indicator to output directory if using cache
 if $USE_CACHE; then

@@ -64,8 +64,18 @@ case "$DEVICE" in
         ;;
 esac
 
+# FP8 overrides
+if $FP8_MODE; then
+    CHECKPOINT_PATH="${MLCOMMONS_ALL_PATH}/model/Mixtral-8x7B-Instruct-v0.1-FP8"
+    DTYPE="auto"
+fi
+
 # Set output directory
-OUTPUT_LOG_DIR="output_offline_tp${TENSOR_PARALLEL_SIZE}_${DTYPE}_gpu${GPU_MEMORY_UTILIZATION}"
+FP8_PREFIX=""
+if $FP8_MODE; then
+    FP8_PREFIX="fp8_"
+fi
+OUTPUT_LOG_DIR="output_offline/${FP8_PREFIX}tp${TENSOR_PARALLEL_SIZE}_${DTYPE}_gpu${GPU_MEMORY_UTILIZATION}"
 
 # Create output log directory
 mkdir -p ${OUTPUT_LOG_DIR}
