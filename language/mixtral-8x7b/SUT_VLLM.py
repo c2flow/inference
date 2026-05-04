@@ -41,6 +41,7 @@ class SUT:
         distributed_executor_backend="mp",
         block_size=None,
         gpu_memory_utilization=0.9,
+        enable_expert_parallel=False,
     ):
 
         self.model_path = model_path or "mistralai/Mixtral-8x7B-Instruct-v0.1"
@@ -56,6 +57,7 @@ class SUT:
         self.distributed_executor_backend = distributed_executor_backend
         self.block_size = block_size
         self.gpu_memory_utilization = gpu_memory_utilization
+        self.enable_expert_parallel = enable_expert_parallel
 
         self.dataset_path = dataset_path
         self.data_object = Dataset(
@@ -222,6 +224,7 @@ class SUT:
             distributed_executor_backend=self.distributed_executor_backend,
             gpu_memory_utilization=self.gpu_memory_utilization,
             block_size=self.block_size,
+            enable_expert_parallel=self.enable_expert_parallel,
         )
         log.info("Loaded model")
 
@@ -265,6 +268,7 @@ class SUTServer(SUT):
         distributed_executor_backend="mp",
         block_size=None,
         gpu_memory_utilization=0.9,
+        enable_expert_parallel=False,
         **kwargs,
     ):
 
@@ -281,6 +285,7 @@ class SUTServer(SUT):
             distributed_executor_backend=distributed_executor_backend,
             block_size=block_size,
             gpu_memory_utilization=gpu_memory_utilization,
+            enable_expert_parallel=enable_expert_parallel,
         )
         self.request_id = 0
         self.request_id_lock = threading.Lock()
@@ -416,6 +421,7 @@ class SUTServer(SUT):
             block_size=self.block_size,
             data_parallel_size=self.data_parallel_size,
             distributed_executor_backend=self.distributed_executor_backend,
+            enable_expert_parallel=self.enable_expert_parallel,
         )
         self.model = AsyncLLMEngine.from_engine_args(self.engine_args)
         log.info("Loaded model")

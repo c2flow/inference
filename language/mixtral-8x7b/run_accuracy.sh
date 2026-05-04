@@ -6,6 +6,7 @@
 #   --dtype DTYPE                 Data type (default: bfloat16, GCU: float16)
 #   --use-cached-outputs          Use cached outputs from previous runs
 #   --tensor-parallel-size, -tp N Tensor parallel size (default: 8)
+#   --ep                           Enable Expert Parallelism
 
 # Set VLLM_WORKER_MULTIPROC_METHOD to spawn to avoid CUDA error
 export VLLM_WORKER_MULTIPROC_METHOD="spawn"
@@ -25,6 +26,8 @@ DEVICE="cuda"
 FP8_MODE=false
 USE_CACHE=false
 TENSOR_PARALLEL_SIZE=8
+DTYPE="bfloat16"
+EP_MODE=false
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --device|-d)
@@ -49,13 +52,14 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             TENSOR_PARALLEL_SIZE="$2"; shift 2 ;;
+        --ep)
+            EP_MODE=true; shift ;;
         *)
             echo "Warning: Unknown option $1" >&2; shift ;;
     esac
 done
 
 # Device-specific defaults
-DTYPE="bfloat16"
 BLOCK_SIZE=""
 GPU_MEMORY_UTILIZATION=0.9
 case "$DEVICE" in
@@ -93,7 +97,11 @@ FP8_PREFIX=""
 if $FP8_MODE; then
     FP8_PREFIX="fp8_"
 fi
-OUTPUT_LOG_DIR="output_accuracy/${FP8_PREFIX}tp${TENSOR_PARALLEL_SIZE}_${DTYPE}_gpu${GPU_MEMORY_UTILIZATION}"
+EP_SUFFIX=""
+if $EP_MODE; then
+    EP_SUFFIX="_ep"
+fi
+OUTPUT_LOG_DIR="output_accuracy/${FP8_PREFIX}tp${TENSOR_PARALLEL_SIZE}${EP_SUFFIX}_${DTYPE}_gpu${GPU_MEMORY_UTILIZATION}"
 
 # Add cache indicator to output directory if using cache
 if $USE_CACHE; then
@@ -127,6 +135,11 @@ CMD_ARGS="--scenario Offline \
         --batch-size 15000 \
         --dtype ${DTYPE} \
         --vllm --tensor-parallel-size ${TENSOR_PARALLEL_SIZE} --num-workers 1 --gpu-memory-utilization ${GPU_MEMORY_UTILIZATION}"
+
+# Add EP flag if enabled
+if $EP_MODE; then
+    CMD_ARGS="${CMD_ARGS} --enable-expert-parallel"
+fi
 
 # Add block-size if specified
 if [[ -n "$BLOCK_SIZE" ]]; then

@@ -7,6 +7,7 @@
 #   --data-parallel-size, -dp N     Data parallel size (default: 1)
 #   --target-qps, -qps QPS         Target QPS (default: 10)
 #   --executor-backend, -backend B  Executor backend (default: mp)
+#   --ep                            Enable Expert Parallelism
 
 # Set VLLM_WORKER_MULTIPROC_METHOD to spawn to avoid CUDA error
 export VLLM_WORKER_MULTIPROC_METHOD="spawn"
@@ -28,6 +29,8 @@ TENSOR_PARALLEL_SIZE=8
 DATA_PARALLEL_SIZE=1
 TARGET_QPS=10
 EXECUTOR_BACKEND="mp"
+DTYPE="bfloat16"
+EP_MODE=false
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --device|-d)
@@ -62,13 +65,14 @@ while [[ $# -gt 0 ]]; do
                 exit 1
             fi
             EXECUTOR_BACKEND="$2"; shift 2 ;;
+        --ep)
+            EP_MODE=true; shift ;;
         *)
             echo "Warning: Unknown option $1" >&2; shift ;;
     esac
 done
 
 # Device-specific defaults
-DTYPE="bfloat16"
 BLOCK_SIZE=""
 GPU_MEMORY_UTILIZATION=0.9
 case "$DEVICE" in
@@ -106,7 +110,11 @@ FP8_PREFIX=""
 if $FP8_MODE; then
     FP8_PREFIX="fp8_"
 fi
-OUTPUT_LOG_DIR="output_server/${FP8_PREFIX}tp${TENSOR_PARALLEL_SIZE}_dp${DATA_PARALLEL_SIZE}_qps${TARGET_QPS}"
+EP_SUFFIX=""
+if $EP_MODE; then
+    EP_SUFFIX="_ep"
+fi
+OUTPUT_LOG_DIR="output_server/${FP8_PREFIX}tp${TENSOR_PARALLEL_SIZE}_dp${DATA_PARALLEL_SIZE}${EP_SUFFIX}_qps${TARGET_QPS}"
 
 # Create output log directory
 mkdir -p ${OUTPUT_LOG_DIR}
@@ -134,6 +142,11 @@ CMD_ARGS="--scenario Server \
         --distributed-executor-backend ${EXECUTOR_BACKEND} \
         --gpu-memory-utilization ${GPU_MEMORY_UTILIZATION} \
         --vllm --num-workers 1"
+
+# Add EP flag if enabled
+if $EP_MODE; then
+    CMD_ARGS="${CMD_ARGS} --enable-expert-parallel"
+fi
 
 # Add block-size if specified
 if [[ -n "$BLOCK_SIZE" ]]; then

@@ -137,6 +137,11 @@ def get_args():
         default=None,
         help="Target QPS for Server scenario. Overrides user.conf if specified.",
     )
+    parser.add_argument(
+        "--enable-expert-parallel",
+        action="store_true",
+        help="Enable Expert Parallelism for MoE models",
+    )
 
     args = parser.parse_args()
     return args
@@ -195,6 +200,7 @@ def main():
             distributed_executor_backend=args.distributed_executor_backend,
             block_size=args.block_size,
             gpu_memory_utilization=args.gpu_memory_utilization,
+            enable_expert_parallel=args.enable_expert_parallel,
         )
         sut = sut_cls(**sut_kwargs)
     else:
